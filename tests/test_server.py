@@ -4,7 +4,7 @@ import asyncio
 
 import httpx
 
-from ai_my_health_manager.server import app
+from ai_my_health_manager.server_new import app, mcp
 
 
 def test_http_endpoints_and_reverse_proxy_host_header() -> None:
@@ -42,4 +42,25 @@ def test_http_endpoints_and_reverse_proxy_host_header() -> None:
     }
     assert initialize.status_code == 200
     assert initialize.json()["result"]["serverInfo"]["name"] == "AI My Health Manager"
+
+
+def test_playmcp_tool_metadata_is_exposed() -> None:
+    tools = mcp._tool_manager.list_tools()
+
+    assert {tool.name for tool in tools} == {
+        "check_emergency_signals",
+        "draft_health_records",
+        "calculate_follow_up_date",
+        "build_medication_reminders",
+        "build_visit_brief",
+    }
+
+    for tool in tools:
+        assert "AI My Health Manager(AI 나의 건강관리사)" in tool.description
+        assert tool.annotations is not None
+        assert tool.annotations.title is not None
+        assert tool.annotations.readOnlyHint is not None
+        assert tool.annotations.destructiveHint is not None
+        assert tool.annotations.openWorldHint is not None
+        assert tool.annotations.idempotentHint is not None
 

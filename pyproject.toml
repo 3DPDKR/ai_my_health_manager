@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "ai-my-health-manager"
 version = "0.1.0"
-description = "대화형 건강 기록 초안과 생활 관리 계획을 제공하는 안전 중심 MCP 서버"
+description = "Safety-focused MCP server for structured health drafts"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -18,7 +18,7 @@ dependencies = [
 dev = ["pytest>=8.4,<9"]
 
 [project.scripts]
-ai-my-health-manager = "ai_my_health_manager.server:main"
+ai-my-health-manager = "ai_my_health_manager.server_new:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ai_my_health_manager"]
@@ -26,5 +26,3 @@ packages = ["src/ai_my_health_manager"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
-
-
