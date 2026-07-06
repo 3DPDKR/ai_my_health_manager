@@ -1,0 +1,10 @@
+* text=auto
+
+*.py text eol=lf
+*.md text eol=lf
+Dockerfile text eol=lf
+*.toml text eol=lf
+*.example text eol=lf
+*.gitignore text eol=lf
+*.dockerignore text eol=lf
+
