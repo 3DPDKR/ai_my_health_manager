@@ -30,6 +30,8 @@ mcp = FastMCP(
     ),
     stateless_http=True,
     json_response=True,
+    host=settings.host,
+    port=settings.port,
 )
 
 
