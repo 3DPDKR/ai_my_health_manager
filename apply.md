@@ -2,6 +2,21 @@
 
 폼의 각 항목에 아래 값을 그대로 입력한다. 코드 블록 밖의 안내문은 입력하지 않는다.
 
+## 현재 Kakao Cloud 배포 정보 — 신청서 URL로 사용 금지
+
+| 항목 | 현재 값 |
+|---|---|
+| MCP 서버 | `ai-my-health-manager-prod` |
+| Kakao Cloud ID | `1656` |
+| Author | `4978629322` |
+| Status | `Active` |
+| Endpoint URL | `https://ai-my-health-manager-prod.playmcp-endpoint.kakaocloud.io/mcp` |
+| Endpoint name | `ai-my-health-manager-prod` |
+| Namespace | `kbm-u-4978629322` |
+| 지원 Tools | `0개 — 등록 준비 미완료` |
+
+현재 Endpoint는 Kakao Cloud 서버 주소이며 AGENTIC PLAYER 10 신청서의 PlayMCP 상세 페이지 URL이 아니다. 지원 Tools가 0개이므로 최신 Git 커밋으로 재빌드한 뒤 5개 도구 노출을 확인해야 한다.
+
 ## 1. 이름 — 3/200자
 
 ```text
@@ -26,7 +41,8 @@ https://playmcp.kakao.com/mcp/[실제 서비스 ID]
 - PlayMCP 심사 승인 후 서비스를 `전체 공개`로 변경한다.
 - 공개 상세 페이지에서 실제 URL을 복사해 위 예시 전체를 교체한다.
 - `[실제 서비스 ID]`가 남은 상태로 제출하지 않는다.
-- Kakao Cloud의 `.../mcp` Endpoint 주소가 아니라 PlayMCP 공개 상세 페이지 URL을 입력한다.
+- Kakao Cloud Endpoint가 아니라 PlayMCP 공개 상세 페이지 URL을 입력한다.
+- `https://ai-my-health-manager-prod.playmcp-endpoint.kakaocloud.io/mcp`를 이 칸에 입력하지 않는다.
 
 ## 4. [신청2] PlayMCP 서비스명 (선택)
 
@@ -86,8 +102,10 @@ https://github.com/3DPDKR/ai_my_health_manager
 
 ## 제출 전 필수 체크리스트
 
-- [ ] GitHub 저장소에 최신 프로그램이 공개되어 있다.
-- [ ] Kakao Cloud MCP 서버 상태가 `Active`다.
+- [x] GitHub 저장소에 최신 프로그램이 공개되어 있다. (`1443a60`)
+- [x] Kakao Cloud MCP 서버 상태가 `Active`다.
+- [ ] Kakao Cloud 지원 Tools가 5개 표시된다. 현재 `0개`다.
+- [ ] 원격 `/mcp` 초기화와 `tools/list`가 성공한다. 현재 `421 Invalid Host header`다.
 - [ ] PlayMCP `정보 불러오기`에서 5개 도구가 모두 표시된다.
 - [ ] PlayMCP 임시 등록 상태에서 정상·응급·오류 테스트를 완료했다.
 - [ ] `등록 및 심사 요청`이 승인되었다.
@@ -95,7 +113,7 @@ https://github.com/3DPDKR/ai_my_health_manager
 - [ ] 로그아웃 상태에서 PlayMCP 공개 상세 페이지가 열린다.
 - [ ] 신청1 URL 칸에 서비스 설명이 아닌 실제 공개 상세 페이지 URL을 입력했다.
 - [ ] 신청2의 두 항목은 비워 두었다.
-- [ ] 서비스 소개 문안이 200자 이하인지 확인했다.
-- [ ] 소속 구분은 `개인개발/프리랜서`, 소속명은 `해당 없음`으로 입력했다.
-- [ ] 최종 제출은 1회만 가능하므로 전체 내용을 다시 검토했다.
+- [x] 서비스 소개 문안이 200자 이하이다. (`187자`)
+- [x] 소속 구분은 `개인개발/프리랜서`, 소속명은 `해당 없음`이다.
+- [ ] 최종 제출 전 전체 내용을 다시 검토했다.
 
