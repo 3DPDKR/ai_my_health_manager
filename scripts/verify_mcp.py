@@ -11,6 +11,7 @@ from mcp.client.streamable_http import streamablehttp_client
 EXPECTED_TOOLS = {
     "check_emergency_signals",
     "draft_health_records",
+    "draft_photo_health_records",
     "calculate_follow_up_date",
     "build_medication_reminders",
     "build_visit_brief",

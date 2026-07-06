@@ -15,7 +15,7 @@ RUN pip install --no-cache-dir .
 
 USER app
 EXPOSE 8000
-CMD ["python", "-m", "ai_my_health_manager.server_new"]
+CMD ["python", "-m", "ai_my_health_manager.server_photo"]
 
 
 

@@ -18,8 +18,11 @@
 | `calculate_follow_up_date` | 방문 완료일 기준 다음 일정 계산 |
 | `build_medication_reminders` | 확인된 복용 기준으로 알림 시각 계산 |
 | `build_visit_brief` | 건강 기록을 진료용 브리핑으로 정리 |
+| `draft_photo_health_records` | 사진 입력을 파일, 카메라, 붙여넣기 경로로 받아 건강 기록 초안으로 정리 |
 
 ## 로컬 실행
+
+웹 화면은 `http://localhost:8000/`에서 열 수 있고, MCP는 `/mcp`를 사용한다.
 
 ```powershell
 cd C:\projects\ai_my_health_manager
@@ -27,7 +30,7 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[dev]"
 pytest
-python -m ai_my_health_manager.server
+python -m ai_my_health_manager.server_photo
 ```
 
 - MCP: `http://localhost:8000/mcp`
@@ -63,4 +66,6 @@ docker run --rm -p 8000:8000 ai-my-health-manager:v0.1.0
 ## 주의
 
 이 프로젝트는 의료기기가 아니며 의료진의 진단·치료를 대신하지 않습니다. 증상이 심하거나 빠르게 악화되면 119 또는 의료기관의 도움을 받으세요.
+
+복약과 병원 일정의 외부 알림은 카카오 캘린더 연동 패키지로 만들어 사용합니다.
 
