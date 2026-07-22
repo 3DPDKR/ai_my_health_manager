@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 import struct
 import zlib
 
@@ -17,39 +18,106 @@ if 'android.permission.INTERNET' not in text:
 text = text.replace('android:label="ai_health_assistant"', 'android:label="AI 건강비서"')
 manifest.write_text(text, encoding='utf-8')
 
-# flutter_local_notifications 19.x requires Android core library desugaring.
-# flutter create currently generates Kotlin DSL (build.gradle.kts), but keep
-# Groovy support as a fallback so future Flutter template changes do not break CI.
-kts = Path('clean_app/android/app/build.gradle.kts')
-if kts.exists():
-    gradle = kts.read_text(encoding='utf-8')
+
+def configure_kotlin_gradle(path: Path) -> None:
+    gradle = path.read_text(encoding='utf-8')
+
+    gradle = re.sub(
+        r'compileSdk\s*=\s*(?:flutter\.compileSdkVersion|\d+)',
+        'compileSdk = 36',
+        gradle,
+        count=1,
+    )
+    gradle = re.sub(
+        r'minSdk\s*=\s*(?:flutter\.minSdkVersion|\d+)',
+        'minSdk = 23',
+        gradle,
+        count=1,
+    )
+    gradle = re.sub(
+        r'targetSdk\s*=\s*(?:flutter\.targetSdkVersion|\d+)',
+        'targetSdk = 36',
+        gradle,
+        count=1,
+    )
+
     if 'isCoreLibraryDesugaringEnabled = true' not in gradle:
-        compile_marker = 'compileOptions {'
+        marker = 'compileOptions {'
         gradle = gradle.replace(
-            compile_marker,
-            compile_marker + '\n        isCoreLibraryDesugaringEnabled = true',
+            marker,
+            marker + '\n        isCoreLibraryDesugaringEnabled = true',
             1,
         )
+
     if 'coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:' not in gradle:
-        dependency_block = '''\n\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")\n}\n'''
-        gradle = gradle.rstrip() + dependency_block
-    kts.write_text(gradle, encoding='utf-8')
-else:
-    groovy = Path('clean_app/android/app/build.gradle')
-    if not groovy.exists():
-        raise FileNotFoundError('Android app Gradle file was not generated.')
-    gradle = groovy.read_text(encoding='utf-8')
+        gradle = gradle.rstrip() + '''\n\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")\n}\n'''
+
+    path.write_text(gradle, encoding='utf-8')
+
+
+def configure_groovy_gradle(path: Path) -> None:
+    gradle = path.read_text(encoding='utf-8')
+
+    gradle = re.sub(
+        r'compileSdk(?:Version)?\s+(?:flutter\.compileSdkVersion|\d+)',
+        'compileSdkVersion 36',
+        gradle,
+        count=1,
+    )
+    gradle = re.sub(
+        r'minSdk(?:Version)?\s+(?:flutter\.minSdkVersion|\d+)',
+        'minSdkVersion 23',
+        gradle,
+        count=1,
+    )
+    gradle = re.sub(
+        r'targetSdk(?:Version)?\s+(?:flutter\.targetSdkVersion|\d+)',
+        'targetSdkVersion 36',
+        gradle,
+        count=1,
+    )
+
     if 'coreLibraryDesugaringEnabled true' not in gradle:
-        compile_marker = 'compileOptions {'
+        marker = 'compileOptions {'
         gradle = gradle.replace(
-            compile_marker,
-            compile_marker + '\n        coreLibraryDesugaringEnabled true',
+            marker,
+            marker + '\n        coreLibraryDesugaringEnabled true',
             1,
         )
+
     if "coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:" not in gradle:
-        dependency_block = '''\n\ndependencies {\n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'\n}\n'''
-        gradle = gradle.rstrip() + dependency_block
-    groovy.write_text(gradle, encoding='utf-8')
+        gradle = gradle.rstrip() + '''\n\ndependencies {\n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'\n}\n'''
+
+    path.write_text(gradle, encoding='utf-8')
+
+
+kts = Path('clean_app/android/app/build.gradle.kts')
+groovy = Path('clean_app/android/app/build.gradle')
+if kts.exists():
+    configure_kotlin_gradle(kts)
+elif groovy.exists():
+    configure_groovy_gradle(groovy)
+else:
+    raise FileNotFoundError('Android app Gradle file was not generated.')
+
+# GitHub Actions runner occasionally throws "Already watching path" while Gradle
+# watches the generated Android directory. Disable VFS watching and daemon reuse.
+gradle_properties = Path('clean_app/android/gradle.properties')
+properties = gradle_properties.read_text(encoding='utf-8') if gradle_properties.exists() else ''
+required_properties = {
+    'org.gradle.vfs.watch': 'false',
+    'org.gradle.daemon': 'false',
+    'android.useAndroidX': 'true',
+    'android.enableJetifier': 'true',
+}
+for key, value in required_properties.items():
+    pattern = re.compile(rf'^{re.escape(key)}=.*$', re.MULTILINE)
+    line = f'{key}={value}'
+    if pattern.search(properties):
+        properties = pattern.sub(line, properties)
+    else:
+        properties = properties.rstrip() + '\n' + line + '\n'
+gradle_properties.write_text(properties.lstrip(), encoding='utf-8')
 
 
 def chunk(kind, data):
@@ -113,4 +181,4 @@ for folder, size in {
 }.items():
     create_icon(Path('clean_app/android/app/src/main/res') / folder / 'ic_launcher.png', size)
 
-print('Android permissions, desugaring, app label, and icon configured.')
+print('Android SDK 36, minSdk 23, desugaring, Gradle stability, permissions, label and icon configured.')
