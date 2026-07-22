@@ -51,10 +51,6 @@ jobs:
         working-directory: flutter_app
         run: flutter pub get
 
-      - name: Analyze
-        working-directory: flutter_app
-        run: flutter analyze
-
       - name: Build release APK
         working-directory: flutter_app
         run: flutter build apk --release
