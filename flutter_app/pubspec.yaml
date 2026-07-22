@@ -1,7 +1,7 @@
 name: ai_my_health_manager
 description: AI 대화 중심 나의 건강관리 앱
 publish_to: 'none'
-version: 2.1.1+5
+version: 2.2.0+6
 
 environment:
   sdk: '>=3.6.0 <4.0.0'
