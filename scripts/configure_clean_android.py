@@ -1,123 +1,89 @@
 from pathlib import Path
-import re
 import struct
 import zlib
 
-manifest = Path('clean_app/android/app/src/main/AndroidManifest.xml')
-text = manifest.read_text(encoding='utf-8')
+APP = Path('clean_app')
+ANDROID = APP / 'android'
+MANIFEST = ANDROID / 'app/src/main/AndroidManifest.xml'
+APP_GRADLE_KTS = ANDROID / 'app/build.gradle.kts'
+GRADLE_PROPERTIES = ANDROID / 'gradle.properties'
+
+if not MANIFEST.exists():
+    raise FileNotFoundError(f'Missing generated manifest: {MANIFEST}')
+
+manifest = MANIFEST.read_text(encoding='utf-8')
 permissions = [
     '<uses-permission android:name="android.permission.INTERNET"/>',
     '<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>',
     '<uses-permission android:name="android.permission.CAMERA"/>',
     '<uses-permission android:name="android.permission.RECORD_AUDIO"/>',
     '<uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>',
+    '<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>',
+    '<uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>',
 ]
-if 'android.permission.INTERNET' not in text:
-    marker = '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
-    text = text.replace(marker, marker + '\n    ' + '\n    '.join(permissions), 1)
-text = text.replace('android:label="ai_health_assistant"', 'android:label="AI 건강비서"')
-manifest.write_text(text, encoding='utf-8')
+marker = '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
+if marker not in manifest:
+    raise RuntimeError('Unexpected AndroidManifest.xml format')
+for permission in permissions:
+    if permission not in manifest:
+        manifest = manifest.replace(marker, marker + '\n    ' + permission, 1)
+manifest = manifest.replace('android:label="ai_health_assistant"', 'android:label="AI 건강비서"')
+MANIFEST.write_text(manifest, encoding='utf-8')
 
-
-def configure_kotlin_gradle(path: Path) -> None:
-    gradle = path.read_text(encoding='utf-8')
-
-    gradle = re.sub(
-        r'compileSdk\s*=\s*(?:flutter\.compileSdkVersion|\d+)',
-        'compileSdk = 36',
-        gradle,
-        count=1,
-    )
-    gradle = re.sub(
-        r'minSdk\s*=\s*(?:flutter\.minSdkVersion|\d+)',
-        'minSdk = 23',
-        gradle,
-        count=1,
-    )
-    gradle = re.sub(
-        r'targetSdk\s*=\s*(?:flutter\.targetSdkVersion|\d+)',
-        'targetSdk = 36',
-        gradle,
-        count=1,
-    )
-
-    if 'isCoreLibraryDesugaringEnabled = true' not in gradle:
-        marker = 'compileOptions {'
-        gradle = gradle.replace(
-            marker,
-            marker + '\n        isCoreLibraryDesugaringEnabled = true',
-            1,
-        )
-
-    if 'coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:' not in gradle:
-        gradle = gradle.rstrip() + '''\n\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")\n}\n'''
-
-    path.write_text(gradle, encoding='utf-8')
-
-
-def configure_groovy_gradle(path: Path) -> None:
-    gradle = path.read_text(encoding='utf-8')
-
-    gradle = re.sub(
-        r'compileSdk(?:Version)?\s+(?:flutter\.compileSdkVersion|\d+)',
-        'compileSdkVersion 36',
-        gradle,
-        count=1,
-    )
-    gradle = re.sub(
-        r'minSdk(?:Version)?\s+(?:flutter\.minSdkVersion|\d+)',
-        'minSdkVersion 23',
-        gradle,
-        count=1,
-    )
-    gradle = re.sub(
-        r'targetSdk(?:Version)?\s+(?:flutter\.targetSdkVersion|\d+)',
-        'targetSdkVersion 36',
-        gradle,
-        count=1,
-    )
-
-    if 'coreLibraryDesugaringEnabled true' not in gradle:
-        marker = 'compileOptions {'
-        gradle = gradle.replace(
-            marker,
-            marker + '\n        coreLibraryDesugaringEnabled true',
-            1,
-        )
-
-    if "coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:" not in gradle:
-        gradle = gradle.rstrip() + '''\n\ndependencies {\n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'\n}\n'''
-
-    path.write_text(gradle, encoding='utf-8')
-
-
-kts = Path('clean_app/android/app/build.gradle.kts')
-groovy = Path('clean_app/android/app/build.gradle')
-if kts.exists():
-    configure_kotlin_gradle(kts)
-elif groovy.exists():
-    configure_groovy_gradle(groovy)
-else:
-    raise FileNotFoundError('Android app Gradle file was not generated.')
-
-# GitHub Actions runner occasionally throws "Already watching path" while Gradle
-# watches the generated Android directory. Disable VFS watching and daemon reuse.
-gradle_properties = Path('clean_app/android/gradle.properties')
-properties = gradle_properties.read_text(encoding='utf-8') if gradle_properties.exists() else ''
-required_properties = {
-    'org.gradle.vfs.watch': 'false',
-    'org.gradle.daemon': 'false',
-    'android.useAndroidX': 'true',
-    'android.enableJetifier': 'true',
+# Write the app Gradle file deterministically instead of patching a generated
+# template. This prevents flutter.compileSdkVersion or stale SDK values from
+# surviving template changes.
+APP_GRADLE_KTS.write_text('''plugins {
+    id("com.android.application")
+    id("kotlin-android")
+    id("dev.flutter.flutter-gradle-plugin")
 }
-for key, value in required_properties.items():
-    pattern = re.compile(rf'^{re.escape(key)}=.*$', re.MULTILINE)
-    line = f'{key}={value}'
-    if pattern.search(properties):
-        properties = pattern.sub(line, properties)
-    else:
-        properties = properties.rstrip() + '\n' + line + '\n'
-gradle_properties.write_text(properties.lstrip(), encoding='utf-8')
+
+android {
+    namespace = "com.aimyhealthmanager.ai_health_assistant"
+    compileSdk = 36
+    ndkVersion = flutter.ndkVersion
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled = true
+    }
+
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_17.toString()
+    }
+
+    defaultConfig {
+        applicationId = "com.aimyhealthmanager.ai_health_assistant"
+        minSdk = 23
+        targetSdk = 36
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
+    }
+
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.getByName("debug")
+        }
+    }
+}
+
+flutter {
+    source = "../.."
+}
+
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
+}
+''', encoding='utf-8')
+
+GRADLE_PROPERTIES.write_text('''org.gradle.jvmargs=-Xmx4G -XX:MaxMetaspaceSize=1G -XX:ReservedCodeCacheSize=512m -XX:+HeapDumpOnOutOfMemoryError
+android.useAndroidX=true
+android.enableJetifier=true
+org.gradle.vfs.watch=false
+org.gradle.daemon=false
+''', encoding='utf-8')
 
 
 def chunk(kind, data):
@@ -179,6 +145,6 @@ for folder, size in {
     'mipmap-xxhdpi': 144,
     'mipmap-xxxhdpi': 192,
 }.items():
-    create_icon(Path('clean_app/android/app/src/main/res') / folder / 'ic_launcher.png', size)
+    create_icon(ANDROID / 'app/src/main/res' / folder / 'ic_launcher.png', size)
 
-print('Android SDK 36, minSdk 23, desugaring, Gradle stability, permissions, label and icon configured.')
+print('Deterministic Android configuration written: compileSdk=36, targetSdk=36, minSdk=23, Java 17, desugaring enabled.')
