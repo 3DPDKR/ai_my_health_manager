@@ -1,4 +1,4 @@
-name: Clean AI Health APK
+name: AI Health Assistant APK
 
 on:
   workflow_dispatch:
@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 35
 
     steps:
-      - name: Checkout clean rebuild source
+      - name: Checkout completed app source
         uses: actions/checkout@v4
         with:
           ref: clean-rebuild
@@ -36,11 +36,12 @@ jobs:
       - name: Generate Android project
         run: |
           cp clean_app/pubspec.yaml /tmp/pubspec.yaml
-          cp clean_app/lib/main.dart /tmp/main.dart
+          cp -r clean_app/lib /tmp/health_lib
           cd clean_app
           flutter create --platforms=android --org com.aimyhealthmanager --project-name ai_health_assistant .
           cp /tmp/pubspec.yaml pubspec.yaml
-          cp /tmp/main.dart lib/main.dart
+          rm -rf lib
+          cp -r /tmp/health_lib lib
           rm -f test/widget_test.dart
 
       - name: Configure Android app
@@ -59,12 +60,12 @@ jobs:
         run: flutter build apk --release
 
       - name: Prepare artifact
-        run: cp clean_app/build/app/outputs/flutter-apk/app-release.apk AI_건강비서_v1.1.0.apk
+        run: cp clean_app/build/app/outputs/flutter-apk/app-release.apk AI_건강비서_v1.2.1.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ai-health-assistant-v1-1-0-apk
-          path: AI_건강비서_v1.1.0.apk
+          name: ai-health-assistant-v1-2-1-apk
+          path: AI_건강비서_v1.2.1.apk
           if-no-files-found: error
           retention-days: 30
