@@ -17,6 +17,40 @@ if 'android.permission.INTERNET' not in text:
 text = text.replace('android:label="ai_health_assistant"', 'android:label="AI 건강비서"')
 manifest.write_text(text, encoding='utf-8')
 
+# flutter_local_notifications 19.x requires Android core library desugaring.
+# flutter create currently generates Kotlin DSL (build.gradle.kts), but keep
+# Groovy support as a fallback so future Flutter template changes do not break CI.
+kts = Path('clean_app/android/app/build.gradle.kts')
+if kts.exists():
+    gradle = kts.read_text(encoding='utf-8')
+    if 'isCoreLibraryDesugaringEnabled = true' not in gradle:
+        compile_marker = 'compileOptions {'
+        gradle = gradle.replace(
+            compile_marker,
+            compile_marker + '\n        isCoreLibraryDesugaringEnabled = true',
+            1,
+        )
+    if 'coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:' not in gradle:
+        dependency_block = '''\n\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")\n}\n'''
+        gradle = gradle.rstrip() + dependency_block
+    kts.write_text(gradle, encoding='utf-8')
+else:
+    groovy = Path('clean_app/android/app/build.gradle')
+    if not groovy.exists():
+        raise FileNotFoundError('Android app Gradle file was not generated.')
+    gradle = groovy.read_text(encoding='utf-8')
+    if 'coreLibraryDesugaringEnabled true' not in gradle:
+        compile_marker = 'compileOptions {'
+        gradle = gradle.replace(
+            compile_marker,
+            compile_marker + '\n        coreLibraryDesugaringEnabled true',
+            1,
+        )
+    if "coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:" not in gradle:
+        dependency_block = '''\n\ndependencies {\n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'\n}\n'''
+        gradle = gradle.rstrip() + dependency_block
+    groovy.write_text(gradle, encoding='utf-8')
+
 
 def chunk(kind, data):
     return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data) & 0xffffffff)
@@ -79,4 +113,4 @@ for folder, size in {
 }.items():
     create_icon(Path('clean_app/android/app/src/main/res') / folder / 'ic_launcher.png', size)
 
-print('Android permissions, app label, and green cross-leaf icon configured.')
+print('Android permissions, desugaring, app label, and icon configured.')
