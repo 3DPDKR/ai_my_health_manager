@@ -46,7 +46,7 @@ jobs:
           cp /tmp/main.dart lib/main.dart
           rm -f test/widget_test.dart
 
-      - name: Configure localization and Android permissions
+      - name: Configure app source and Android permissions
         working-directory: flutter_app
         run: |
           python3 - <<'PY'
@@ -54,16 +54,43 @@ jobs:
 
           main = Path('lib/main.dart')
           source = main.read_text(encoding='utf-8')
+
           localization_import = "import 'package:flutter_localizations/flutter_localizations.dart';"
           if localization_import not in source:
               source = source.replace(
                   "import 'package:flutter/material.dart';",
                   "import 'package:flutter/material.dart';\n" + localization_import,
               )
+
           locale_line = "supportedLocales: const [Locale('ko'), Locale('en'), Locale('ja'), Locale('zh')],"
           delegates = "localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate],\n    " + locale_line
           if 'localizationsDelegates:' not in source:
               source = source.replace(locale_line, delegates)
+
+          broken = """      final answer = candidates != null && candidates.isNotEmpty
+          ? ((candidates.first as Map<String, dynamic>)['content'] as Map<String, dynamic>?)?['parts']
+                  ?.letText() ??
+              '응답을 읽지 못했습니다.'
+          : '응답을 읽지 못했습니다.';"""
+          fixed = """      String answer = '응답을 읽지 못했습니다.';
+      if (candidates != null && candidates.isNotEmpty) {
+        final first = candidates.first;
+        if (first is Map<String, dynamic>) {
+          final content = first['content'];
+          if (content is Map<String, dynamic>) {
+            final responseParts = content['parts'];
+            if (responseParts is List && responseParts.isNotEmpty) {
+              final firstPart = responseParts.first;
+              if (firstPart is Map<String, dynamic>) {
+                answer = firstPart['text']?.toString() ?? answer;
+              }
+            }
+          }
+        }
+      }"""
+          if broken not in source:
+              raise SystemExit('Expected Gemini parsing block was not found')
+          source = source.replace(broken, fixed)
           main.write_text(source, encoding='utf-8')
 
           manifest = Path('android/app/src/main/AndroidManifest.xml')
