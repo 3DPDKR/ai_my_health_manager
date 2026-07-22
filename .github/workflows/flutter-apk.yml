@@ -1,0 +1,71 @@
+name: Flutter APK
+
+on:
+  push:
+    branches: [flutter-app]
+    paths:
+      - 'flutter_app/**'
+      - '.github/workflows/flutter-apk.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'flutter_app/**'
+      - '.github/workflows/flutter-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate Android platform
+        working-directory: flutter_app
+        run: |
+          cp pubspec.yaml /tmp/pubspec.yaml
+          mkdir -p /tmp/health_lib
+          cp lib/main.dart /tmp/health_lib/main.dart
+          flutter create --platforms=android --org com.aimyhealthmanager --project-name ai_my_health_manager .
+          cp /tmp/pubspec.yaml pubspec.yaml
+          cp /tmp/health_lib/main.dart lib/main.dart
+
+      - name: Install dependencies
+        working-directory: flutter_app
+        run: flutter pub get
+
+      - name: Analyze
+        working-directory: flutter_app
+        run: flutter analyze
+
+      - name: Build release APK
+        working-directory: flutter_app
+        run: flutter build apk --release
+
+      - name: Rename APK
+        run: cp flutter_app/build/app/outputs/flutter-apk/app-release.apk 나의건강관리.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-my-health-manager-apk
+          path: 나의건강관리.apk
+          if-no-files-found: error
+          retention-days: 30
