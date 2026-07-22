@@ -47,6 +47,53 @@ jobs:
           cp /tmp/pubspec.yaml pubspec.yaml
           cp /tmp/health_lib/main.dart lib/main.dart
 
+      - name: Apply launcher icon
+        working-directory: flutter_app
+        run: |
+          mkdir -p android/app/src/main/res/drawable
+          mkdir -p android/app/src/main/res/drawable-v24
+          mkdir -p android/app/src/main/res/mipmap-anydpi-v26
+          mkdir -p android/app/src/main/res/values
+
+          cat > android/app/src/main/res/values/colors.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <color name="ic_launcher_background">#FFFFFF</color>
+          </resources>
+          EOF
+
+          cat > android/app/src/main/res/drawable/ic_launcher_foreground.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp"
+              android:height="108dp"
+              android:viewportWidth="108"
+              android:viewportHeight="108">
+              <path
+                  android:fillColor="#159447"
+                  android:pathData="M44,20 L64,20 L64,44 L88,44 L88,64 L64,64 L64,88 L44,88 L44,64 L20,64 L20,44 L44,44 Z" />
+              <path
+                  android:fillColor="#5BBF6A"
+                  android:pathData="M69,26 C79,19 90,20 94,22 C91,33 84,40 72,40 C72,34 71,30 69,26 Z" />
+              <path
+                  android:fillColor="#159447"
+                  android:pathData="M72,39 C77,34 83,29 90,25 C83,32 78,37 74,43 Z" />
+          </vector>
+          EOF
+
+          cp android/app/src/main/res/drawable/ic_launcher_foreground.xml android/app/src/main/res/drawable-v24/ic_launcher_foreground.xml
+
+          cat > android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/ic_launcher_background" />
+              <foreground android:drawable="@drawable/ic_launcher_foreground" />
+              <monochrome android:drawable="@drawable/ic_launcher_foreground" />
+          </adaptive-icon>
+          EOF
+
+          cp android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
+
       - name: Install dependencies
         working-directory: flutter_app
         run: flutter pub get
@@ -56,12 +103,12 @@ jobs:
         run: flutter build apk --release
 
       - name: Rename APK
-        run: cp flutter_app/build/app/outputs/flutter-apk/app-release.apk 나의건강관리.apk
+        run: cp flutter_app/build/app/outputs/flutter-apk/app-release.apk 나의건강관리_아이콘수정.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ai-my-health-manager-apk
-          path: 나의건강관리.apk
+          name: ai-my-health-manager-apk-icon-fixed
+          path: 나의건강관리_아이콘수정.apk
           if-no-files-found: error
           retention-days: 30
