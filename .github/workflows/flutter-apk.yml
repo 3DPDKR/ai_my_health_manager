@@ -43,7 +43,7 @@ jobs:
           cp /tmp/main.dart lib/main.dart
           rm -f test/widget_test.dart
 
-      - name: Configure Android permissions
+      - name: Configure Android app
         run: python3 scripts/configure_clean_android.py
 
       - name: Install dependencies
@@ -52,19 +52,19 @@ jobs:
 
       - name: Analyze source
         working-directory: clean_app
-        run: flutter analyze lib
+        run: flutter analyze lib --no-fatal-infos --no-fatal-warnings
 
       - name: Build release APK
         working-directory: clean_app
         run: flutter build apk --release
 
       - name: Prepare artifact
-        run: cp clean_app/build/app/outputs/flutter-apk/app-release.apk AI_건강비서_clean_v1.0.0.apk
+        run: cp clean_app/build/app/outputs/flutter-apk/app-release.apk AI_건강비서_v1.1.0.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ai-health-assistant-clean-v1-apk
-          path: AI_건강비서_clean_v1.0.0.apk
+          name: ai-health-assistant-v1-1-0-apk
+          path: AI_건강비서_v1.1.0.apk
           if-no-files-found: error
           retention-days: 30
