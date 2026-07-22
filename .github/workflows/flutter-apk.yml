@@ -1,12 +1,10 @@
-name: AI Health Assistant APK 1.2.6
+name: AI Health Assistant APK 1.2.7
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
     paths:
-      - 'clean_app/**'
-      - 'scripts/**'
       - 'PROGRAM_GUIDE.md'
       - '.github/workflows/flutter-apk.yml'
 
@@ -23,13 +21,23 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      - name: Checkout latest main source
-        uses: actions/checkout@v5
+      - name: Checkout application source branch
+        uses: actions/checkout@v4
         with:
+          ref: clean-rebuild
           fetch-depth: 1
 
+      - name: Verify application source
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test -f clean_app/pubspec.yaml
+          test -d clean_app/lib
+          test -f scripts/configure_clean_android.py
+          echo "Application source verified on clean-rebuild branch."
+
       - name: Set up Java 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
@@ -40,33 +48,22 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Prepare Flutter and Android tooling
+      - name: Set up Android SDK tools
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android 36 platform
         shell: bash
         run: |
           set -euxo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
           flutter --version
-          flutter config --enable-android
-          flutter precache --android
           flutter doctor -v
 
-          SDKMANAGER="${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"
-          if [ ! -x "$SDKMANAGER" ]; then
-            SDKMANAGER="$(find "${ANDROID_SDK_ROOT}" -type f -name sdkmanager | head -n 1)"
-          fi
-          if [ -z "$SDKMANAGER" ] || [ ! -x "$SDKMANAGER" ]; then
-            echo "sdkmanager was not found under ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT}"
-            exit 1
-          fi
-
-          yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" "platform-tools" "platforms;android-36" "build-tools;36.0.0"
-
-      - name: Preserve current application source
+      - name: Preserve current Flutter source
         shell: bash
         run: |
           set -euxo pipefail
-          test -f clean_app/pubspec.yaml
-          test -d clean_app/lib
           rm -rf /tmp/ai_health_source
           mkdir -p /tmp/ai_health_source
           cp clean_app/pubspec.yaml /tmp/ai_health_source/pubspec.yaml
@@ -84,7 +81,7 @@ jobs:
           cp -R /tmp/ai_health_source/lib lib
           rm -f test/widget_test.dart
 
-      - name: Apply Android app configuration
+      - name: Apply Android configuration
         shell: bash
         run: |
           set -euxo pipefail
@@ -98,6 +95,7 @@ jobs:
           if [ ! -f "$GRADLE_FILE" ]; then
             GRADLE_FILE=clean_app/android/app/build.gradle
           fi
+          echo "===== $GRADLE_FILE ====="
           cat "$GRADLE_FILE"
           grep -E "compileSdk.*36|compileSdkVersion 36" "$GRADLE_FILE"
           grep -E "minSdk.*23|minSdkVersion 23" "$GRADLE_FILE"
@@ -124,14 +122,15 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          test -f clean_app/build/app/outputs/flutter-apk/app-release.apk
-          cp clean_app/build/app/outputs/flutter-apk/app-release.apk AI_건강비서_v1.2.6.apk
-          ls -lh AI_건강비서_v1.2.6.apk
+          APK=clean_app/build/app/outputs/flutter-apk/app-release.apk
+          test -s "$APK"
+          cp "$APK" AI_건강비서_v1.2.7.apk
+          ls -lh AI_건강비서_v1.2.7.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ai-health-assistant-v1-2-6-apk
-          path: AI_건강비서_v1.2.6.apk
+          name: ai-health-assistant-v1-2-7-apk
+          path: AI_건강비서_v1.2.7.apk
           if-no-files-found: error
           retention-days: 30
