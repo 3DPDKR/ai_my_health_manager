@@ -6,6 +6,9 @@ on:
     paths:
       - 'flutter_app/**'
       - '.github/workflows/flutter-apk.yml'
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
   workflow_dispatch:
 
 permissions:
@@ -48,7 +51,6 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-
           main = Path('lib/main.dart')
           s = main.read_text()
           if "package:flutter_localizations/flutter_localizations.dart" not in s:
