@@ -29,8 +29,6 @@ class HealthRecord {
       .replaceAll(RegExp(r'\s+'), '')
       .replaceAll(RegExp(r'[^가-힣a-z0-9]'), '');
 
-  /// 날짜·카테고리·제목·핵심 상세정보를 이용한 중복 판정 키입니다.
-  /// ID나 등록 시각처럼 매번 달라지는 값은 제외합니다.
   String get duplicateKey {
     final day = '${createdAt.year.toString().padLeft(4, '0')}'
         '${createdAt.month.toString().padLeft(2, '0')}'
@@ -41,7 +39,6 @@ class HealthRecord {
     return [category, title, summary, detailText, day].map(_normalize).join('::');
   }
 
-  /// 같은 처방전·검사·일정처럼 사실상 동일한 기록인지 확인합니다.
   bool isDuplicateOf(HealthRecord other) => duplicateKey == other.duplicateKey;
 
   Map<String, dynamic> toJson() => {
@@ -98,6 +95,8 @@ class HealthProfile {
     this.confirmedConditions = const [],
     this.inferredConditions = const [],
     this.medications = const [],
+    this.medicationsByDepartment = const {},
+    this.inferredConditionsByDepartment = const {},
     this.allergies = const [],
     this.notes = const [],
   });
@@ -105,6 +104,8 @@ class HealthProfile {
   final List<String> confirmedConditions;
   final List<String> inferredConditions;
   final List<String> medications;
+  final Map<String, List<String>> medicationsByDepartment;
+  final Map<String, List<String>> inferredConditionsByDepartment;
   final List<String> allergies;
   final List<String> notes;
 
@@ -112,6 +113,7 @@ class HealthProfile {
       confirmedConditions.isEmpty &&
       inferredConditions.isEmpty &&
       medications.isEmpty &&
+      medicationsByDepartment.isEmpty &&
       allergies.isEmpty &&
       notes.isEmpty;
 
@@ -119,20 +121,39 @@ class HealthProfile {
         'confirmedConditions': confirmedConditions,
         'inferredConditions': inferredConditions,
         'medications': medications,
+        'medicationsByDepartment': medicationsByDepartment,
+        'inferredConditionsByDepartment': inferredConditionsByDepartment,
         'allergies': allergies,
         'notes': notes,
       };
+
+  static Map<String, List<String>> _readGrouped(dynamic value) {
+    if (value is! Map) return const {};
+    final result = <String, List<String>>{};
+    for (final entry in value.entries) {
+      final department = entry.key.toString().trim();
+      if (department.isEmpty || entry.value is! List) continue;
+      final items = (entry.value as List)
+          .map((e) => e.toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+      if (items.isNotEmpty) result[department] = items;
+    }
+    return result;
+  }
 
   factory HealthProfile.fromJson(Map<String, dynamic> json) => HealthProfile(
         confirmedConditions: List<String>.from(json['confirmedConditions'] ?? const []),
         inferredConditions: List<String>.from(json['inferredConditions'] ?? const []),
         medications: List<String>.from(json['medications'] ?? const []),
+        medicationsByDepartment: _readGrouped(json['medicationsByDepartment']),
+        inferredConditionsByDepartment: _readGrouped(json['inferredConditionsByDepartment']),
         allergies: List<String>.from(json['allergies'] ?? const []),
         notes: List<String>.from(json['notes'] ?? const []),
       );
 
   HealthProfile merged(Map<String, dynamic> update) {
-    List<String> merge(List<String> current, dynamic incoming) {
+    List<String> mergeList(List<String> current, dynamic incoming) {
       final output = <String>[];
       final seen = <String>{};
       for (final item in <String>[
@@ -146,12 +167,50 @@ class HealthProfile {
       return output;
     }
 
+    Map<String, List<String>> mergeGrouped(
+      Map<String, List<String>> current,
+      dynamic incoming,
+    ) {
+      final result = <String, List<String>>{
+        for (final entry in current.entries) entry.key: List<String>.from(entry.value),
+      };
+      final parsed = _readGrouped(incoming);
+      for (final entry in parsed.entries) {
+        final existingDepartment = result.keys.cast<String?>().firstWhere(
+              (key) => RecordDeduplicator.normalize(key ?? '') == RecordDeduplicator.normalize(entry.key),
+              orElse: () => null,
+            );
+        final department = existingDepartment ?? entry.key;
+        result[department] = mergeList(result[department] ?? const [], entry.value);
+      }
+      return result;
+    }
+
+    final groupedMedications = mergeGrouped(
+      medicationsByDepartment,
+      update['medicationsByDepartment'],
+    );
+    final groupedInferred = mergeGrouped(
+      inferredConditionsByDepartment,
+      update['inferredConditionsByDepartment'],
+    );
+    final allGroupedMedications = groupedMedications.values.expand((e) => e).toList();
+    final allGroupedConditions = groupedInferred.values.expand((e) => e).toList();
+
     return HealthProfile(
-      confirmedConditions: merge(confirmedConditions, update['confirmedConditions']),
-      inferredConditions: merge(inferredConditions, update['inferredConditions']),
-      medications: merge(medications, update['medications']),
-      allergies: merge(allergies, update['allergies']),
-      notes: merge(notes, update['notes']),
+      confirmedConditions: mergeList(confirmedConditions, update['confirmedConditions']),
+      inferredConditions: mergeList(
+        mergeList(inferredConditions, update['inferredConditions']),
+        allGroupedConditions,
+      ),
+      medications: mergeList(
+        mergeList(medications, update['medications']),
+        allGroupedMedications,
+      ),
+      medicationsByDepartment: groupedMedications,
+      inferredConditionsByDepartment: groupedInferred,
+      allergies: mergeList(allergies, update['allergies']),
+      notes: mergeList(notes, update['notes']),
     );
   }
 }
