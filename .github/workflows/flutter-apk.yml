@@ -53,7 +53,8 @@ jobs:
               s=s.replace("import 'package:flutter/material.dart';", "import 'package:flutter/material.dart';\nimport 'package:flutter_localizations/flutter_localizations.dart';")
           target="supportedLocales: const [Locale('ko'), Locale('en'), Locale('ja'), Locale('zh')],"
           replacement="localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate],\n    supportedLocales: const [Locale('ko'), Locale('en'), Locale('ja'), Locale('zh')],"
-          s=s.replace(target,replacement)
+          if 'localizationsDelegates:' not in s:
+              s=s.replace(target,replacement)
           main.write_text(s)
 
           p=Path('android/app/src/main/AndroidManifest.xml')
@@ -94,11 +95,11 @@ jobs:
         working-directory: flutter_app
         run: flutter build apk --release
       - name: Rename APK
-        run: cp flutter_app/build/app/outputs/flutter-apk/app-release.apk AI_건강비서_v2.1.1.apk
+        run: cp flutter_app/build/app/outputs/flutter-apk/app-release.apk AI_건강비서_v2.2.0.apk
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ai-health-assistant-v2-1-1-apk
-          path: AI_건강비서_v2.1.1.apk
+          name: ai-health-assistant-v2-2-0-apk
+          path: AI_건강비서_v2.2.0.apk
           if-no-files-found: error
           retention-days: 30
