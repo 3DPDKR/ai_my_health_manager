@@ -53,45 +53,57 @@ jobs:
           from pathlib import Path
 
           main = Path('lib/main.dart')
-          source = main.read_text(encoding='utf-8')
+          lines = main.read_text(encoding='utf-8').splitlines()
 
-          localization_import = "import 'package:flutter_localizations/flutter_localizations.dart';"
-          if localization_import not in source:
-              source = source.replace(
-                  "import 'package:flutter/material.dart';",
-                  "import 'package:flutter/material.dart';\n" + localization_import,
-              )
+          import_line = "import 'package:flutter_localizations/flutter_localizations.dart';"
+          if import_line not in lines:
+              material_index = lines.index("import 'package:flutter/material.dart';")
+              lines.insert(material_index + 1, import_line)
 
-          locale_line = "supportedLocales: const [Locale('ko'), Locale('en'), Locale('ja'), Locale('zh')],"
-          delegates = "localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate],\n    " + locale_line
-          if 'localizationsDelegates:' not in source:
-              source = source.replace(locale_line, delegates)
+          if not any('localizationsDelegates:' in line for line in lines):
+              for index, line in enumerate(lines):
+                  if 'supportedLocales: const [' in line:
+                      lines[index:index] = [
+                          '      localizationsDelegates: const [',
+                          '        GlobalMaterialLocalizations.delegate,',
+                          '        GlobalWidgetsLocalizations.delegate,',
+                          '        GlobalCupertinoLocalizations.delegate,',
+                          '      ],',
+                      ]
+                      break
 
-          broken = """      final answer = candidates != null && candidates.isNotEmpty
-          ? ((candidates.first as Map<String, dynamic>)['content'] as Map<String, dynamic>?)?['parts']
-                  ?.letText() ??
-              '응답을 읽지 못했습니다.'
-          : '응답을 읽지 못했습니다.';"""
-          fixed = """      String answer = '응답을 읽지 못했습니다.';
-      if (candidates != null && candidates.isNotEmpty) {
-        final first = candidates.first;
-        if (first is Map<String, dynamic>) {
-          final content = first['content'];
-          if (content is Map<String, dynamic>) {
-            final responseParts = content['parts'];
-            if (responseParts is List && responseParts.isNotEmpty) {
-              final firstPart = responseParts.first;
-              if (firstPart is Map<String, dynamic>) {
-                answer = firstPart['text']?.toString() ?? answer;
-              }
-            }
-          }
-        }
-      }"""
-          if broken not in source:
-              raise SystemExit('Expected Gemini parsing block was not found')
-          source = source.replace(broken, fixed)
-          main.write_text(source, encoding='utf-8')
+          start = None
+          end = None
+          for index, line in enumerate(lines):
+              if 'final answer = candidates != null && candidates.isNotEmpty' in line:
+                  start = index
+              if start is not None and index > start and ": '응답을 읽지 못했습니다.';" in line:
+                  end = index
+                  break
+
+          if start is None or end is None:
+              raise SystemExit('Gemini parser block not found')
+
+          replacement = [
+              "      String answer = '응답을 읽지 못했습니다.';",
+              '      if (candidates != null && candidates.isNotEmpty) {',
+              '        final first = candidates.first;',
+              '        if (first is Map<String, dynamic>) {',
+              "          final content = first['content'];",
+              '          if (content is Map<String, dynamic>) {',
+              "            final responseParts = content['parts'];",
+              '            if (responseParts is List && responseParts.isNotEmpty) {',
+              '              final firstPart = responseParts.first;',
+              '              if (firstPart is Map<String, dynamic>) {',
+              "                answer = firstPart['text']?.toString() ?? answer;",
+              '              }',
+              '            }',
+              '          }',
+              '        }',
+              '      }',
+          ]
+          lines[start:end + 1] = replacement
+          main.write_text('\n'.join(lines) + '\n', encoding='utf-8')
 
           manifest = Path('android/app/src/main/AndroidManifest.xml')
           xml = manifest.read_text(encoding='utf-8')
