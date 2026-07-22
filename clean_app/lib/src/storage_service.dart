@@ -21,6 +21,58 @@ class StorageService {
   static const _profileKey = 'health_profile_v3';
   static const _logsKey = 'error_logs_v3';
 
+  String _plainName(dynamic value) {
+    if (value is Map) {
+      for (final key in const ['name', 'condition', 'disease', 'title', 'medicine']) {
+        final text = value[key]?.toString().trim() ?? '';
+        if (text.isNotEmpty) return text;
+      }
+      return '';
+    }
+    final text = value?.toString().trim() ?? '';
+    if (text.startsWith('{') && text.contains('name:')) {
+      final match = RegExp(r'name:\s*([^,}]+)').firstMatch(text);
+      return match?.group(1)?.trim() ?? '';
+    }
+    return text;
+  }
+
+  List<String> _plainList(dynamic value, {int maxItems = 30}) {
+    if (value is! List) return const [];
+    final result = <String>[];
+    final seen = <String>{};
+    for (final item in value) {
+      final name = _plainName(item);
+      final key = RecordDeduplicator.normalize(name);
+      if (name.isNotEmpty && seen.add(key)) result.add(name);
+      if (result.length >= maxItems) break;
+    }
+    return result;
+  }
+
+  Map<String, List<String>> _plainGrouped(dynamic value, {int maxItems = 20}) {
+    if (value is! Map) return const {};
+    final result = <String, List<String>>{};
+    for (final entry in value.entries) {
+      final department = entry.key.toString().trim();
+      final items = _plainList(entry.value, maxItems: maxItems);
+      if (department.isNotEmpty && items.isNotEmpty) result[department] = items;
+    }
+    return result;
+  }
+
+  Map<String, dynamic> _migrateProfile(Map<String, dynamic> raw) {
+    return {
+      'confirmedConditions': _plainList(raw['confirmedConditions'], maxItems: 12),
+      'inferredConditions': _plainList(raw['inferredConditions'], maxItems: 8),
+      'medications': _plainList(raw['medications'], maxItems: 40),
+      'medicationsByDepartment': _plainGrouped(raw['medicationsByDepartment']),
+      'inferredConditionsByDepartment': _plainGrouped(raw['inferredConditionsByDepartment'], maxItems: 8),
+      'allergies': _plainList(raw['allergies'], maxItems: 10),
+      'notes': _plainList(raw['notes'], maxItems: 12),
+    };
+  }
+
   Future<StoredHealthState> load() async {
     final prefs = await SharedPreferences.getInstance();
     final records = <HealthRecord>[];
@@ -34,7 +86,9 @@ class StorageService {
 
     try {
       final rawProfile = jsonDecode(prefs.getString(_profileKey) ?? '{}') as Map<String, dynamic>;
-      profile = HealthProfile.fromJson(rawProfile);
+      final migrated = _migrateProfile(rawProfile);
+      profile = HealthProfile.fromJson(migrated);
+      await prefs.setString(_profileKey, jsonEncode(profile.toJson()));
     } catch (_) {}
 
     try {
