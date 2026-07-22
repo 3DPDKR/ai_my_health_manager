@@ -86,6 +86,58 @@ class GeminiService {
     }
   }
 
+  String _simpleName(dynamic value) {
+    if (value is Map) {
+      for (final key in const ['name', 'condition', 'disease', 'title', 'medicine']) {
+        final text = value[key]?.toString().trim() ?? '';
+        if (text.isNotEmpty) return text;
+      }
+      return '';
+    }
+    final text = value?.toString().trim() ?? '';
+    if (text.startsWith('{') && text.contains('name:')) {
+      final match = RegExp(r'name:\s*([^,}]+)').firstMatch(text);
+      return match?.group(1)?.trim() ?? '';
+    }
+    return text;
+  }
+
+  List<String> _simpleList(dynamic value, {int maxItems = 12}) {
+    if (value is! List) return const [];
+    final result = <String>[];
+    final seen = <String>{};
+    for (final item in value) {
+      final name = _simpleName(item);
+      final key = RecordDeduplicator.normalize(name);
+      if (name.isNotEmpty && seen.add(key)) result.add(name);
+      if (result.length >= maxItems) break;
+    }
+    return result;
+  }
+
+  Map<String, List<String>> _simpleGrouped(dynamic value, {int maxItems = 12}) {
+    if (value is! Map) return const {};
+    final result = <String, List<String>>{};
+    for (final entry in value.entries) {
+      final department = entry.key.toString().trim();
+      final items = _simpleList(entry.value, maxItems: maxItems);
+      if (department.isNotEmpty && items.isNotEmpty) result[department] = items;
+    }
+    return result;
+  }
+
+  Map<String, dynamic> _sanitizeProfile(Map<String, dynamic> raw) {
+    return {
+      'confirmedConditions': _simpleList(raw['confirmedConditions'], maxItems: 8),
+      'inferredConditions': _simpleList(raw['inferredConditions'], maxItems: 8),
+      'medications': _simpleList(raw['medications'], maxItems: 30),
+      'medicationsByDepartment': _simpleGrouped(raw['medicationsByDepartment'], maxItems: 20),
+      'inferredConditionsByDepartment': _simpleGrouped(raw['inferredConditionsByDepartment'], maxItems: 8),
+      'allergies': _simpleList(raw['allergies'], maxItems: 8),
+      'notes': _simpleList(raw['notes'], maxItems: 8),
+    };
+  }
+
   Future<GeminiResult> analyze({
     required String apiKey,
     required String userText,
@@ -95,71 +147,58 @@ class GeminiService {
   }) async {
     final prompt = '''
 You are a safety-focused personal health assistant. Respond in $responseLanguage.
-Analyze the user text and every attached image, prescription, PDF, and document together.
+Analyze the user text and all attached prescriptions, images, PDFs and documents together.
 
 Stored health profile:
 ${jsonEncode(profile.toJson())}
 
-Prescription organization rules:
-- Identify the medical department from the document, hospital name, physician name, medicine indications, and context.
-- Use a visible department such as 내과, 신경과, 안과, 정형외과, 피부과, 이비인후과, 비뇨의학과, 정신건강의학과, or 기타/확인 필요.
-- Never invent a department. When uncertain, use "진료과 확인 필요".
-- Group medicines from the same prescription into one medication record per department and prescription date.
-- In every prescription medication record, details must contain:
-  department, hospital, doctor, prescriptionDate, medications, relatedConditions, inferenceBasis.
-- medications must preserve each readable medicine name, active ingredient if known, dose, frequency, timing, duration, and purpose.
-- relatedConditions are medication-based possibilities only. Store them as inferred, never confirmed.
-- For each inferred condition, include a brief reason such as which medicine or drug class led to the inference.
-- If the prescription explicitly prints a diagnosis, it may be stored as confirmed only when clearly readable. Otherwise keep it inferred.
-- Add all medicines to profileUpdate.medications and also group them in profileUpdate.medicationsByDepartment.
-- Add medication-based disease possibilities to profileUpdate.inferredConditions and also group them in profileUpdate.inferredConditionsByDepartment.
-- Do not duplicate the same medicine or condition within a department.
+Display and storage rules:
+- Keep the user-facing summary short and easy to scan.
+- Organize prescription medicines by medical department.
+- In the health-status view, group medicine-based possibilities by common disease name, for example 당뇨, 고혈압, 고지혈증, 알레르기, 위장질환, 혈액순환질환, 신경질환, 안과질환.
+- Do not create one disease card for every medicine.
+- Merge duplicate or closely related disease names into one plain disease label.
+- Return condition and medication arrays as plain strings only. Never put maps/objects such as {name: ..., source: ...} inside profile arrays.
+- Keep medicine names and detailed dosage inside department prescription records, not in the health-status disease list.
+- Limit inferredConditions to the most relevant 8 grouped disease names.
+- A medicine-based disease is only an estimate. Never present it as a confirmed diagnosis.
+- If a diagnosis is explicitly printed and readable, it may be confirmed; otherwise inferred only.
 
-Critical medication safety rules:
-- Compare every newly extracted medication with all stored medications.
-- Detect exact duplicates, same active ingredient with different brand names, same drug class duplication, overlapping prescription periods, and likely replacement prescriptions.
-- If duplicate medication or duplicate prescription is possible, begin answer with "⚠️ 중복 처방 가능성" in Korean, or equivalent in the response language.
-- Name the compared medicines and tell the user not to stop, combine, or change medicines independently and to confirm with a doctor or pharmacist.
-- Distinguish confirmed duplication from possible duplication when ingredient data is incomplete.
-- Keep the duplicate warning visible in the natural answer.
+Prescription rules:
+- Identify department, hospital, physician and prescription date when readable.
+- Never invent a department. Use "진료과 확인 필요" when uncertain.
+- Group all medicines from one prescription into one medication record.
+- details may contain department, hospital, doctor, prescriptionDate and a medications list.
+- Add medicine names as plain strings to medications and medicationsByDepartment.
+- Add only grouped disease labels as plain strings to inferredConditions and inferredConditionsByDepartment.
 
-Other rules:
-1. Give a concise natural-language summary organized by medical department.
-2. Extract hospital records, laboratory values, diet, symptoms, vital signs, and schedules when present.
-3. Never present medication-based disease inference as a diagnosis.
-4. Avoid duplicate records and repeated medicines.
-5. Suggest calendar events only when a reliable date and time exist.
-6. Return exactly one JSON object without markdown fences:
+Medication safety:
+- Compare new medicines with stored medicines.
+- Warn about exact duplicates, same ingredient, same drug class or overlapping prescriptions.
+- Begin the answer with "⚠️ 중복 처방 가능성" when relevant.
+- Tell the user to confirm with a doctor or pharmacist and not to change medicines independently.
+
+Return exactly one JSON object without markdown fences:
 {
-  "answer":"natural answer organized by medical department and including safety warnings",
+  "answer":"brief readable summary",
   "followUpQuestion":"one important question or empty",
-  "records":[
-    {
-      "category":"medication|condition|hospital|schedule|lab|vital|diet|symptom|document|activity|other",
-      "title":"example: 내과 처방전",
-      "summary":"short department-based summary",
-      "details":{
-        "department":"내과",
-        "hospital":"hospital name or empty",
-        "doctor":"doctor name or empty",
-        "prescriptionDate":"YYYY-MM-DD or empty",
-        "medications":[{"name":"","ingredient":"","dose":"","frequency":"","timing":"","duration":"","purpose":""}],
-        "relatedConditions":["possible condition"],
-        "inferenceBasis":["medicine or ingredient -> possible condition"]
-      },
-      "confidence":0.0
-    }
-  ],
+  "records":[{
+    "category":"medication|condition|hospital|schedule|lab|vital|diet|symptom|document|activity|other",
+    "title":"내과 처방전",
+    "summary":"short summary",
+    "details":{"department":"내과","hospital":"","doctor":"","prescriptionDate":"","medications":[]},
+    "confidence":0.0
+  }],
   "profileUpdate":{
-    "confirmedConditions":[],
-    "inferredConditions":[],
-    "medications":[],
-    "medicationsByDepartment":{"내과":[]},
-    "inferredConditionsByDepartment":{"내과":[]},
+    "confirmedConditions":["당뇨"],
+    "inferredConditions":["고혈압","고지혈증"],
+    "medications":["약 이름"],
+    "medicationsByDepartment":{"내과":["약 이름"]},
+    "inferredConditionsByDepartment":{"내과":["고혈압","고지혈증"]},
     "allergies":[],
     "notes":[]
   },
-  "calendarSuggestions":[{"title":"title","start":"ISO-8601 local datetime","end":"ISO-8601 local datetime","description":"reason"}]
+  "calendarSuggestions":[]
 }
 User input: $userText
 ''';
@@ -182,7 +221,7 @@ User input: $userText
         'contents': [
           {'parts': parts}
         ],
-        'generationConfig': {'temperature': 0.15, 'responseMimeType': 'application/json'},
+        'generationConfig': {'temperature': 0.1, 'responseMimeType': 'application/json'},
       },
     );
 
@@ -201,6 +240,7 @@ User input: $userText
     var raw = Map<String, dynamic>.from(responseParts.first as Map)['text']?.toString().trim() ?? '';
     raw = raw.replaceFirst(RegExp(r'^```(?:json)?\s*'), '').replaceFirst(RegExp(r'\s*```$'), '');
     final parsed = jsonDecode(raw) as Map<String, dynamic>;
+    final rawProfile = Map<String, dynamic>.from((parsed['profileUpdate'] as Map?) ?? const {});
 
     return GeminiResult(
       answer: parsed['answer']?.toString().trim() ?? '분석을 완료했습니다.',
@@ -209,7 +249,7 @@ User input: $userText
           .whereType<Map>()
           .map((e) => Map<String, dynamic>.from(e))
           .toList(),
-      profileUpdate: Map<String, dynamic>.from((parsed['profileUpdate'] as Map?) ?? const {}),
+      profileUpdate: _sanitizeProfile(rawProfile),
       calendarSuggestions: (parsed['calendarSuggestions'] as List<dynamic>? ?? const [])
           .whereType<Map>()
           .map((e) => CalendarSuggestion.fromJson(Map<String, dynamic>.from(e)))
