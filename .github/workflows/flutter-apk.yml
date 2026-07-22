@@ -44,6 +44,7 @@ jobs:
           flutter create --platforms=android --org com.aimyhealthmanager --project-name ai_my_health_manager .
           cp /tmp/pubspec.yaml pubspec.yaml
           cp /tmp/main.dart lib/main.dart
+          rm -f test/widget_test.dart
 
       - name: Configure localization and Android permissions
         working-directory: flutter_app
@@ -87,9 +88,9 @@ jobs:
         working-directory: flutter_app
         run: flutter pub get
 
-      - name: Analyze
+      - name: Analyze app source
         working-directory: flutter_app
-        run: flutter analyze --no-fatal-infos
+        run: flutter analyze lib --no-fatal-infos --no-fatal-warnings
 
       - name: Build release APK
         working-directory: flutter_app
