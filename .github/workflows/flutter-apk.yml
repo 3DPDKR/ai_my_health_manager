@@ -1,15 +1,11 @@
-name: Flutter APK
+name: Clean AI Health APK
 
 on:
-  push:
-    branches: [main, flutter-app]
-    paths:
-      - 'flutter_app/**'
-      - '.github/workflows/flutter-apk.yml'
-  pull_request:
-    branches: [main]
-    types: [opened, reopened, synchronize]
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/flutter-apk.yml'
 
 permissions:
   contents: read
@@ -17,131 +13,58 @@ permissions:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
+
     steps:
-      - name: Checkout flutter app source
+      - name: Checkout clean rebuild source
         uses: actions/checkout@v4
         with:
-          ref: flutter-app
+          ref: clean-rebuild
 
-      - name: Set up Java
+      - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Flutter
+      - name: Set up Flutter stable
         uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
 
-      - name: Generate Android platform
-        working-directory: flutter_app
+      - name: Generate Android project
         run: |
-          cp pubspec.yaml /tmp/pubspec.yaml
-          cp lib/main.dart /tmp/main.dart
-          flutter create --platforms=android --org com.aimyhealthmanager --project-name ai_my_health_manager .
+          cp clean_app/pubspec.yaml /tmp/pubspec.yaml
+          cp clean_app/lib/main.dart /tmp/main.dart
+          cd clean_app
+          flutter create --platforms=android --org com.aimyhealthmanager --project-name ai_health_assistant .
           cp /tmp/pubspec.yaml pubspec.yaml
           cp /tmp/main.dart lib/main.dart
           rm -f test/widget_test.dart
 
-      - name: Configure app source and Android permissions
-        working-directory: flutter_app
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          main = Path('lib/main.dart')
-          lines = main.read_text(encoding='utf-8').splitlines()
-
-          import_line = "import 'package:flutter_localizations/flutter_localizations.dart';"
-          if import_line not in lines:
-              material_index = lines.index("import 'package:flutter/material.dart';")
-              lines.insert(material_index + 1, import_line)
-
-          if not any('localizationsDelegates:' in line for line in lines):
-              for index, line in enumerate(lines):
-                  if 'supportedLocales: const [' in line:
-                      lines[index:index] = [
-                          '      localizationsDelegates: const [',
-                          '        GlobalMaterialLocalizations.delegate,',
-                          '        GlobalWidgetsLocalizations.delegate,',
-                          '        GlobalCupertinoLocalizations.delegate,',
-                          '      ],',
-                      ]
-                      break
-
-          start = None
-          end = None
-          for index, line in enumerate(lines):
-              if 'final answer = candidates != null && candidates.isNotEmpty' in line:
-                  start = index
-              if start is not None and index > start and ": '응답을 읽지 못했습니다.';" in line:
-                  end = index
-                  break
-
-          if start is None or end is None:
-              raise SystemExit('Gemini parser block not found')
-
-          replacement = [
-              "      String answer = '응답을 읽지 못했습니다.';",
-              '      if (candidates != null && candidates.isNotEmpty) {',
-              '        final first = candidates.first;',
-              '        if (first is Map<String, dynamic>) {',
-              "          final content = first['content'];",
-              '          if (content is Map<String, dynamic>) {',
-              "            final responseParts = content['parts'];",
-              '            if (responseParts is List && responseParts.isNotEmpty) {',
-              '              final firstPart = responseParts.first;',
-              '              if (firstPart is Map<String, dynamic>) {',
-              "                answer = firstPart['text']?.toString() ?? answer;",
-              '              }',
-              '            }',
-              '          }',
-              '        }',
-              '      }',
-          ]
-          lines[start:end + 1] = replacement
-          main.write_text('\n'.join(lines) + '\n', encoding='utf-8')
-
-          manifest = Path('android/app/src/main/AndroidManifest.xml')
-          xml = manifest.read_text(encoding='utf-8')
-          permission_lines = [
-              '<uses-permission android:name="android.permission.INTERNET"/>',
-              '<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>',
-              '<uses-permission android:name="android.permission.CAMERA"/>',
-              '<uses-permission android:name="android.permission.RECORD_AUDIO"/>',
-              '<uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>',
-          ]
-          if 'android.permission.INTERNET' not in xml:
-              block = '\n    '.join(permission_lines)
-              xml = xml.replace(
-                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android">',
-                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    ' + block,
-              )
-          manifest.write_text(xml, encoding='utf-8')
-          PY
+      - name: Configure Android permissions
+        run: python3 scripts/configure_clean_android.py
 
       - name: Install dependencies
-        working-directory: flutter_app
+        working-directory: clean_app
         run: flutter pub get
 
-      - name: Analyze app source
-        working-directory: flutter_app
-        run: flutter analyze lib --no-fatal-infos --no-fatal-warnings
+      - name: Analyze source
+        working-directory: clean_app
+        run: flutter analyze lib
 
       - name: Build release APK
-        working-directory: flutter_app
+        working-directory: clean_app
         run: flutter build apk --release
 
-      - name: Rename APK
-        run: cp flutter_app/build/app/outputs/flutter-apk/app-release.apk AI_건강비서_v2.2.0.apk
+      - name: Prepare artifact
+        run: cp clean_app/build/app/outputs/flutter-apk/app-release.apk AI_건강비서_clean_v1.0.0.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ai-health-assistant-v2-2-0-apk
-          path: AI_건강비서_v2.2.0.apk
+          name: ai-health-assistant-clean-v1-apk
+          path: AI_건강비서_clean_v1.0.0.apk
           if-no-files-found: error
           retention-days: 30
