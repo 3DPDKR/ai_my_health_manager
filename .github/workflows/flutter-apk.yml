@@ -1,12 +1,12 @@
-name: AI Health Assistant APK 1.2.8
+name: AI Health Assistant Clean APK 1.2.9
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
     paths:
-      - 'PROGRAM_GUIDE.md'
       - '.github/workflows/flutter-apk.yml'
+      - 'PROGRAM_GUIDE.md'
 
 permissions:
   contents: read
@@ -18,23 +18,22 @@ env:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 45
 
     steps:
-      - name: Checkout application source branch
+      - name: Checkout application source
         uses: actions/checkout@v4
         with:
           ref: clean-rebuild
           fetch-depth: 1
 
-      - name: Verify application source
+      - name: Verify Flutter source
         shell: bash
         run: |
           set -euxo pipefail
           test -f clean_app/pubspec.yaml
           test -d clean_app/lib
-          test -f scripts/configure_clean_android.py
-          git rev-parse --short HEAD
+          find clean_app/lib -maxdepth 3 -type f | sort
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -46,102 +45,155 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          cache: true
+          cache: false
 
-      - name: Set up Android SDK tools
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android 36 platform
+      - name: Install Android platform 36
         shell: bash
         run: |
           set -euxo pipefail
+          sdkmanager --version
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
-          test -d "${ANDROID_SDK_ROOT}/platforms/android-36"
+          sdkmanager 'platform-tools' 'platforms;android-36' 'build-tools;36.0.0'
           flutter --version
           flutter doctor -v
 
-      - name: Preserve Flutter source
+      - name: Create isolated Flutter project
         shell: bash
         run: |
           set -euxo pipefail
-          rm -rf /tmp/ai_health_source
-          mkdir -p /tmp/ai_health_source
-          cp clean_app/pubspec.yaml /tmp/ai_health_source/pubspec.yaml
-          cp -R clean_app/lib /tmp/ai_health_source/lib
-
-      - name: Recreate Android project
-        shell: bash
-        run: |
-          set -euxo pipefail
-          rm -rf clean_app/android clean_app/build clean_app/.dart_tool clean_app/test
-          cd clean_app
+          rm -rf /tmp/ai_health_build
+          mkdir -p /tmp/ai_health_build
+          cd /tmp/ai_health_build
           flutter create --platforms=android --org com.aimyhealthmanager --project-name ai_health_assistant .
-          cp /tmp/ai_health_source/pubspec.yaml pubspec.yaml
-          rm -rf lib
-          cp -R /tmp/ai_health_source/lib lib
-          rm -f test/widget_test.dart
+          cp "$GITHUB_WORKSPACE/clean_app/pubspec.yaml" pubspec.yaml
+          rm -rf lib test
+          cp -R "$GITHUB_WORKSPACE/clean_app/lib" lib
 
-      - name: Apply deterministic Android configuration
+      - name: Write fixed Android configuration
         shell: bash
         run: |
           set -euxo pipefail
-          python3 scripts/configure_clean_android.py
+          APP=/tmp/ai_health_build
 
-      - name: Verify effective Android configuration
-        shell: bash
-        run: |
-          set -euxo pipefail
-          GRADLE_FILE=clean_app/android/app/build.gradle.kts
-          test -f "$GRADLE_FILE"
-          cat "$GRADLE_FILE"
-          grep -F 'compileSdk = 36' "$GRADLE_FILE"
-          grep -F 'minSdk = 23' "$GRADLE_FILE"
-          grep -F 'targetSdk = 36' "$GRADLE_FILE"
-          grep -F 'isCoreLibraryDesugaringEnabled = true' "$GRADLE_FILE"
-          grep -F 'coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")' "$GRADLE_FILE"
-          cat clean_app/android/gradle.properties
+          cat > "$APP/android/app/build.gradle.kts" <<'KOTLIN'
+          plugins {
+              id("com.android.application")
+              id("kotlin-android")
+              id("dev.flutter.flutter-gradle-plugin")
+          }
+
+          android {
+              namespace = "com.aimyhealthmanager.ai_health_assistant"
+              compileSdk = 36
+              ndkVersion = flutter.ndkVersion
+
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+                  isCoreLibraryDesugaringEnabled = true
+              }
+
+              kotlinOptions {
+                  jvmTarget = JavaVersion.VERSION_17.toString()
+              }
+
+              defaultConfig {
+                  applicationId = "com.aimyhealthmanager.ai_health_assistant"
+                  minSdk = 23
+                  targetSdk = 36
+                  versionCode = flutter.versionCode
+                  versionName = flutter.versionName
+              }
+
+              buildTypes {
+                  release {
+                      signingConfig = signingConfigs.getByName("debug")
+                  }
+              }
+          }
+
+          flutter {
+              source = "../.."
+          }
+
+          dependencies {
+              coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
+          }
+          KOTLIN
+
+          cat >> "$APP/android/gradle.properties" <<'PROPS'
+          org.gradle.vfs.watch=false
+          org.gradle.daemon=false
+          android.useAndroidX=true
+          android.enableJetifier=true
+          PROPS
+
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('/tmp/ai_health_build/android/app/src/main/AndroidManifest.xml')
+          s = p.read_text(encoding='utf-8')
+          marker = '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
+          permissions = '''
+              <uses-permission android:name="android.permission.INTERNET"/>
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+              <uses-permission android:name="android.permission.CAMERA"/>
+              <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+              <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+              <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+          '''
+          if 'android.permission.INTERNET' not in s:
+              s = s.replace(marker, marker + permissions, 1)
+          s = s.replace('android:label="ai_health_assistant"', 'android:label="AI 건강비서"')
+          p.write_text(s, encoding='utf-8')
+          PY
+
+          cat "$APP/android/app/build.gradle.kts"
+          grep -q 'compileSdk = 36' "$APP/android/app/build.gradle.kts"
+          grep -q 'minSdk = 23' "$APP/android/app/build.gradle.kts"
+          grep -q 'targetSdk = 36' "$APP/android/app/build.gradle.kts"
+          grep -q 'isCoreLibraryDesugaringEnabled = true' "$APP/android/app/build.gradle.kts"
 
       - name: Install dependencies
-        working-directory: clean_app
+        working-directory: /tmp/ai_health_build
         run: flutter pub get
 
-      - name: Analyze source
-        working-directory: clean_app
+      - name: Analyze Dart source
+        working-directory: /tmp/ai_health_build
         run: flutter analyze lib --no-fatal-infos --no-fatal-warnings
 
       - name: Build release APK
-        working-directory: clean_app
+        working-directory: /tmp/ai_health_build
         shell: bash
         run: |
           set -o pipefail
-          rm -rf build android/.gradle
-          flutter build apk --release --no-tree-shake-icons --verbose 2>&1 | tee ../flutter-build-v1.2.8.log
+          flutter build apk --release --no-tree-shake-icons --verbose 2>&1 | tee "$GITHUB_WORKSPACE/build-v1.2.9.log"
+
+      - name: Prepare APK
+        shell: bash
+        run: |
+          set -euxo pipefail
+          APK=/tmp/ai_health_build/build/app/outputs/flutter-apk/app-release.apk
+          test -s "$APK"
+          cp "$APK" "$GITHUB_WORKSPACE/AI_건강비서_v1.2.9.apk"
+          ls -lh "$GITHUB_WORKSPACE/AI_건강비서_v1.2.9.apk"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-health-assistant-v1-2-9-apk
+          path: AI_건강비서_v1.2.9.apk
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Upload build log on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: ai-health-assistant-v1-2-8-build-log
-          path: flutter-build-v1.2.8.log
-          if-no-files-found: warn
+          name: ai-health-assistant-v1-2-9-build-log
+          path: build-v1.2.9.log
+          if-no-files-found: ignore
           retention-days: 14
-
-      - name: Prepare APK artifact
-        if: success()
-        shell: bash
-        run: |
-          set -euxo pipefail
-          APK=clean_app/build/app/outputs/flutter-apk/app-release.apk
-          test -s "$APK"
-          cp "$APK" AI_건강비서_v1.2.8.apk
-          ls -lh AI_건강비서_v1.2.8.apk
-
-      - name: Upload APK
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ai-health-assistant-v1-2-8-apk
-          path: AI_건강비서_v1.2.8.apk
-          if-no-files-found: error
-          retention-days: 30
