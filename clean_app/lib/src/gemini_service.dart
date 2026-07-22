@@ -95,30 +95,70 @@ class GeminiService {
   }) async {
     final prompt = '''
 You are a safety-focused personal health assistant. Respond in $responseLanguage.
-Analyze the user text and every attached image/PDF/document together.
+Analyze the user text and every attached image, prescription, PDF, and document together.
 
 Stored health profile:
 ${jsonEncode(profile.toJson())}
 
+Prescription organization rules:
+- Identify the medical department from the document, hospital name, physician name, medicine indications, and context.
+- Use a visible department such as 내과, 신경과, 안과, 정형외과, 피부과, 이비인후과, 비뇨의학과, 정신건강의학과, or 기타/확인 필요.
+- Never invent a department. When uncertain, use "진료과 확인 필요".
+- Group medicines from the same prescription into one medication record per department and prescription date.
+- In every prescription medication record, details must contain:
+  department, hospital, doctor, prescriptionDate, medications, relatedConditions, inferenceBasis.
+- medications must preserve each readable medicine name, active ingredient if known, dose, frequency, timing, duration, and purpose.
+- relatedConditions are medication-based possibilities only. Store them as inferred, never confirmed.
+- For each inferred condition, include a brief reason such as which medicine or drug class led to the inference.
+- If the prescription explicitly prints a diagnosis, it may be stored as confirmed only when clearly readable. Otherwise keep it inferred.
+- Add all medicines to profileUpdate.medications and also group them in profileUpdate.medicationsByDepartment.
+- Add medication-based disease possibilities to profileUpdate.inferredConditions and also group them in profileUpdate.inferredConditionsByDepartment.
+- Do not duplicate the same medicine or condition within a department.
+
 Critical medication safety rules:
 - Compare every newly extracted medication with all stored medications.
 - Detect exact duplicates, same active ingredient with different brand names, same drug class duplication, overlapping prescription periods, and likely replacement prescriptions.
-- If duplicate medication or duplicate prescription is possible, begin answer with "⚠️ 중복 처방 가능성" in Korean (or equivalent in response language), name the compared medicines, and tell the user not to stop or combine medicines independently and to confirm with a doctor or pharmacist.
-- Distinguish confirmed duplication from a possible duplication. Do not claim certainty when ingredient data is missing.
-- A duplicate warning must remain visible in the natural answer, not only in structured fields.
+- If duplicate medication or duplicate prescription is possible, begin answer with "⚠️ 중복 처방 가능성" in Korean, or equivalent in the response language.
+- Name the compared medicines and tell the user not to stop, combine, or change medicines independently and to confirm with a doctor or pharmacist.
+- Distinguish confirmed duplication from possible duplication when ingredient data is incomplete.
+- Keep the duplicate warning visible in the natural answer.
 
 Other rules:
-1. Give a clear natural-language answer first.
-2. Extract prescriptions, medications, hospital records, laboratory values, diet, symptoms, vital signs and schedules.
-3. Never present medication-based disease inference as a confirmed diagnosis.
-4. Avoid duplicate records. Do not return the same medication or event more than once.
-5. Suggest calendar events only when a reliable date/time exists.
+1. Give a concise natural-language summary organized by medical department.
+2. Extract hospital records, laboratory values, diet, symptoms, vital signs, and schedules when present.
+3. Never present medication-based disease inference as a diagnosis.
+4. Avoid duplicate records and repeated medicines.
+5. Suggest calendar events only when a reliable date and time exist.
 6. Return exactly one JSON object without markdown fences:
 {
-  "answer":"natural answer including any duplicate-prescription warning",
+  "answer":"natural answer organized by medical department and including safety warnings",
   "followUpQuestion":"one important question or empty",
-  "records":[{"category":"medication|condition|hospital|schedule|lab|vital|diet|symptom|document|activity|other","title":"title","summary":"summary","details":{"label":"value"},"confidence":0.0}],
-  "profileUpdate":{"confirmedConditions":[],"inferredConditions":[],"medications":[],"allergies":[],"notes":[]},
+  "records":[
+    {
+      "category":"medication|condition|hospital|schedule|lab|vital|diet|symptom|document|activity|other",
+      "title":"example: 내과 처방전",
+      "summary":"short department-based summary",
+      "details":{
+        "department":"내과",
+        "hospital":"hospital name or empty",
+        "doctor":"doctor name or empty",
+        "prescriptionDate":"YYYY-MM-DD or empty",
+        "medications":[{"name":"","ingredient":"","dose":"","frequency":"","timing":"","duration":"","purpose":""}],
+        "relatedConditions":["possible condition"],
+        "inferenceBasis":["medicine or ingredient -> possible condition"]
+      },
+      "confidence":0.0
+    }
+  ],
+  "profileUpdate":{
+    "confirmedConditions":[],
+    "inferredConditions":[],
+    "medications":[],
+    "medicationsByDepartment":{"내과":[]},
+    "inferredConditionsByDepartment":{"내과":[]},
+    "allergies":[],
+    "notes":[]
+  },
   "calendarSuggestions":[{"title":"title","start":"ISO-8601 local datetime","end":"ISO-8601 local datetime","description":"reason"}]
 }
 User input: $userText
