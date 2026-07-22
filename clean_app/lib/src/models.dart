@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class HealthRecord {
   HealthRecord({
     required this.id,
@@ -20,6 +22,27 @@ class HealthRecord {
   final String inputMethod;
   final double confidence;
   final String sourceText;
+
+  static String _normalize(Object? value) => value
+      .toString()
+      .toLowerCase()
+      .replaceAll(RegExp(r'\s+'), '')
+      .replaceAll(RegExp(r'[^가-힣a-z0-9]'), '');
+
+  /// 날짜·카테고리·제목·핵심 상세정보를 이용한 중복 판정 키입니다.
+  /// ID나 등록 시각처럼 매번 달라지는 값은 제외합니다.
+  String get duplicateKey {
+    final day = '${createdAt.year.toString().padLeft(4, '0')}'
+        '${createdAt.month.toString().padLeft(2, '0')}'
+        '${createdAt.day.toString().padLeft(2, '0')}';
+    final ordered = details.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    final detailText = ordered.map((e) => '${e.key}:${e.value}').join('|');
+    return [category, title, summary, detailText, day].map(_normalize).join('::');
+  }
+
+  /// 같은 처방전·검사·일정처럼 사실상 동일한 기록인지 확인합니다.
+  bool isDuplicateOf(HealthRecord other) => duplicateKey == other.duplicateKey;
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -44,6 +67,30 @@ class HealthRecord {
         confidence: (json['confidence'] as num?)?.toDouble() ?? 0,
         sourceText: json['sourceText']?.toString() ?? '',
       );
+}
+
+class RecordDeduplicator {
+  static String normalize(String value) => value
+      .toLowerCase()
+      .replaceAll(RegExp(r'\s+'), '')
+      .replaceAll(RegExp(r'[^가-힣a-z0-9]'), '');
+
+  static List<HealthRecord> uniqueNewRecords({
+    required List<HealthRecord> existing,
+    required List<HealthRecord> incoming,
+  }) {
+    final keys = existing.map((e) => e.duplicateKey).toSet();
+    final result = <HealthRecord>[];
+    for (final record in incoming) {
+      if (keys.add(record.duplicateKey)) result.add(record);
+    }
+    return result;
+  }
+
+  static bool sameDocumentBytes(List<int> first, List<int> second) {
+    if (first.length != second.length) return false;
+    return base64Encode(first) == base64Encode(second);
+  }
 }
 
 class HealthProfile {
@@ -86,8 +133,17 @@ class HealthProfile {
 
   HealthProfile merged(Map<String, dynamic> update) {
     List<String> merge(List<String> current, dynamic incoming) {
-      final values = incoming is List ? incoming.map((e) => e.toString().trim()) : const <String>[];
-      return {...current, ...values.where((e) => e.isNotEmpty)}.toList();
+      final output = <String>[];
+      final seen = <String>{};
+      for (final item in <String>[
+        ...current,
+        if (incoming is List) ...incoming.map((e) => e.toString().trim()),
+      ]) {
+        if (item.isEmpty) continue;
+        final key = RecordDeduplicator.normalize(item);
+        if (seen.add(key)) output.add(item);
+      }
+      return output;
     }
 
     return HealthProfile(
@@ -112,6 +168,9 @@ class CalendarSuggestion {
   final DateTime start;
   final DateTime end;
   final String description;
+
+  String get duplicateKey =>
+      '${RecordDeduplicator.normalize(title)}::${start.toLocal().toIso8601String().substring(0, 16)}';
 
   factory CalendarSuggestion.fromJson(Map<String, dynamic> json) {
     final start = DateTime.tryParse(json['start']?.toString() ?? '') ?? DateTime.now().add(const Duration(days: 1));
