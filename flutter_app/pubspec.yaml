@@ -1,7 +1,7 @@
 name: ai_my_health_manager
-description: 나의 건강관리 Flutter 앱
+description: AI 대화 중심 나의 건강관리 앱
 publish_to: 'none'
-version: 1.0.0+1
+version: 2.0.0+3
 
 environment:
   sdk: '>=3.6.0 <4.0.0'
@@ -9,6 +9,11 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  http: ^1.3.0
+  image_picker: ^1.1.2
+  shared_preferences: ^2.5.3
+  flutter_secure_storage: ^9.2.4
+  speech_to_text: ^7.0.0
 
 dev_dependencies:
   flutter_test:
