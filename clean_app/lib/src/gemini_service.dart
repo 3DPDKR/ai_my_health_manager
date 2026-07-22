@@ -1,8 +1,17 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
 import 'models.dart';
+
+class GeminiAttachment {
+  const GeminiAttachment({required this.bytes, required this.mimeType, required this.name});
+  final List<int> bytes;
+  final String mimeType;
+  final String name;
+}
 
 class GeminiResult {
   GeminiResult({
@@ -22,24 +31,56 @@ class GeminiResult {
 
 class GeminiService {
   static const _model = 'gemini-2.5-flash';
+  static final _uri = Uri.parse(
+    'https://generativelanguage.googleapis.com/v1beta/models/$_model:generateContent',
+  );
+
+  Future<http.Response> _postWithRetry({
+    required String apiKey,
+    required Map<String, dynamic> body,
+    Duration timeout = const Duration(seconds: 75),
+  }) async {
+    Object? lastError;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        final response = await http
+            .post(
+              _uri,
+              headers: {'Content-Type': 'application/json', 'x-goog-api-key': apiKey},
+              body: jsonEncode(body),
+            )
+            .timeout(timeout);
+        if (response.statusCode == 429 || response.statusCode >= 500) {
+          lastError = Exception('Gemini HTTP ${response.statusCode}');
+        } else {
+          return response;
+        }
+      } on TimeoutException catch (e) {
+        lastError = e;
+      } on SocketException catch (e) {
+        lastError = e;
+      } on http.ClientException catch (e) {
+        lastError = e;
+      }
+      if (attempt < 2) await Future<void>.delayed(Duration(seconds: attempt + 1));
+    }
+    throw Exception('Gemini 연결 실패: $lastError');
+  }
 
   Future<void> testConnection(String apiKey) async {
-    final response = await http
-        .post(
-          Uri.parse('https://generativelanguage.googleapis.com/v1beta/models/$_model:generateContent'),
-          headers: {'Content-Type': 'application/json', 'x-goog-api-key': apiKey},
-          body: jsonEncode({
-            'contents': [
-              {
-                'parts': [
-                  {'text': 'Reply only with OK'}
-                ]
-              }
+    final response = await _postWithRetry(
+      apiKey: apiKey,
+      timeout: const Duration(seconds: 20),
+      body: {
+        'contents': [
+          {
+            'parts': [
+              {'text': 'Reply only with OK'}
             ]
-          }),
-        )
-        .timeout(const Duration(seconds: 20));
-
+          }
+        ]
+      },
+    );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception('Gemini HTTP ${response.statusCode}');
     }
@@ -48,90 +89,62 @@ class GeminiService {
   Future<GeminiResult> analyze({
     required String apiKey,
     required String userText,
-    required List<List<int>> images,
+    required List<GeminiAttachment> attachments,
     required HealthProfile profile,
     required String responseLanguage,
   }) async {
     final prompt = '''
-You are an AI-first personal health assistant.
-Respond in $responseLanguage.
-The user wants a useful natural answer first. Never show raw JSON, markdown code fences, database field names, or internal categories.
-
-Analyze chat and all attached images together. Images may be prescriptions, medication bags, hospital records, lab results, discharge papers, diet photos, or glucose/blood-pressure displays.
+You are a safety-focused personal health assistant. Respond in $responseLanguage.
+Analyze the user text and every attached image/PDF/document together.
 
 Stored health profile:
 ${jsonEncode(profile.toJson())}
 
-Required behavior:
+Critical medication safety rules:
+- Compare every newly extracted medication with all stored medications.
+- Detect exact duplicates, same active ingredient with different brand names, same drug class duplication, overlapping prescription periods, and likely replacement prescriptions.
+- If duplicate medication or duplicate prescription is possible, begin answer with "⚠️ 중복 처방 가능성" in Korean (or equivalent in response language), name the compared medicines, and tell the user not to stop or combine medicines independently and to confirm with a doctor or pharmacist.
+- Distinguish confirmed duplication from a possible duplication. Do not claim certainty when ingredient data is missing.
+- A duplicate warning must remain visible in the natural answer, not only in structured fields.
+
+Other rules:
 1. Give a clear natural-language answer first.
-2. Extract and structure prescriptions, medications, hospital records, laboratory values, diet, symptoms, and vital signs.
-3. Infer possible diseases from medications only as inferred conditions. Never present them as confirmed diagnoses.
-4. Ask the user to confirm inferred conditions.
-5. If the health profile is insufficient for safe diet or health recommendations, ask only the most important missing question.
-6. For food, compare the meal with confirmed/inferred conditions, medications, allergies, and known lab values. Suggest practical alternatives.
-7. Calculate medication end dates or likely follow-up dates only when prescription date and duration are readable. Mark estimates clearly.
-8. Suggest Google Calendar events for medication end dates, follow-up visits, tests, or confirmed hospital appointments.
-9. Preserve distinctions between confirmed information, inferred information, and information needing confirmation.
-10. Return exactly one JSON object using this schema:
+2. Extract prescriptions, medications, hospital records, laboratory values, diet, symptoms, vital signs and schedules.
+3. Never present medication-based disease inference as a confirmed diagnosis.
+4. Avoid duplicate records. Do not return the same medication or event more than once.
+5. Suggest calendar events only when a reliable date/time exists.
+6. Return exactly one JSON object without markdown fences:
 {
-  "answer":"natural-language answer only",
-  "followUpQuestion":"one important question if needed, otherwise empty",
-  "records":[
-    {
-      "category":"medication|condition|hospital|schedule|lab|vital|diet|symptom|document|activity|other",
-      "title":"user-friendly title",
-      "summary":"short summary",
-      "details":{"label":"value"},
-      "confidence":0.0
-    }
-  ],
-  "profileUpdate":{
-    "confirmedConditions":[],
-    "inferredConditions":[],
-    "medications":[],
-    "allergies":[],
-    "notes":[]
-  },
-  "calendarSuggestions":[
-    {
-      "title":"event title",
-      "start":"ISO-8601 local datetime",
-      "end":"ISO-8601 local datetime",
-      "description":"reason and source"
-    }
-  ]
+  "answer":"natural answer including any duplicate-prescription warning",
+  "followUpQuestion":"one important question or empty",
+  "records":[{"category":"medication|condition|hospital|schedule|lab|vital|diet|symptom|document|activity|other","title":"title","summary":"summary","details":{"label":"value"},"confidence":0.0}],
+  "profileUpdate":{"confirmedConditions":[],"inferredConditions":[],"medications":[],"allergies":[],"notes":[]},
+  "calendarSuggestions":[{"title":"title","start":"ISO-8601 local datetime","end":"ISO-8601 local datetime","description":"reason"}]
 }
-Do not wrap the JSON in markdown fences.
 User input: $userText
 ''';
 
     final parts = <Map<String, dynamic>>[
       {'text': prompt}
     ];
-    for (final bytes in images) {
+    for (final attachment in attachments) {
       parts.add({
         'inline_data': {
-          'mime_type': 'image/jpeg',
-          'data': base64Encode(bytes),
+          'mime_type': attachment.mimeType,
+          'data': base64Encode(attachment.bytes),
         }
       });
     }
 
-    final response = await http
-        .post(
-          Uri.parse('https://generativelanguage.googleapis.com/v1beta/models/$_model:generateContent'),
-          headers: {'Content-Type': 'application/json', 'x-goog-api-key': apiKey},
-          body: jsonEncode({
-            'contents': [
-              {'parts': parts}
-            ],
-            'generationConfig': {
-              'temperature': 0.2,
-              'responseMimeType': 'application/json',
-            },
-          }),
-        )
-        .timeout(const Duration(seconds: 75));
+    final response = await _postWithRetry(
+      apiKey: apiKey,
+      body: {
+        'contents': [
+          {'parts': parts}
+        ],
+        'generationConfig': {'temperature': 0.15, 'responseMimeType': 'application/json'},
+      },
+    );
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final body = response.body.length > 400 ? response.body.substring(0, 400) : response.body;
@@ -140,36 +153,27 @@ User input: $userText
 
     final envelope = jsonDecode(response.body) as Map<String, dynamic>;
     final candidates = envelope['candidates'] as List<dynamic>?;
-    if (candidates == null || candidates.isEmpty) {
-      throw const FormatException('Gemini 응답 후보가 없습니다.');
-    }
-
+    if (candidates == null || candidates.isEmpty) throw const FormatException('Gemini 응답 후보가 없습니다.');
     final first = Map<String, dynamic>.from(candidates.first as Map);
     final content = Map<String, dynamic>.from((first['content'] as Map?) ?? const {});
     final responseParts = content['parts'] as List<dynamic>?;
-    if (responseParts == null || responseParts.isEmpty) {
-      throw const FormatException('Gemini 응답 내용이 없습니다.');
-    }
-
-    final firstPart = Map<String, dynamic>.from(responseParts.first as Map);
-    final raw = firstPart['text']?.toString() ?? '';
-    if (raw.isEmpty) throw const FormatException('Gemini 응답이 비어 있습니다.');
-
+    if (responseParts == null || responseParts.isEmpty) throw const FormatException('Gemini 응답 내용이 없습니다.');
+    var raw = Map<String, dynamic>.from(responseParts.first as Map)['text']?.toString().trim() ?? '';
+    raw = raw.replaceFirst(RegExp(r'^```(?:json)?\s*'), '').replaceFirst(RegExp(r'\s*```$'), '');
     final parsed = jsonDecode(raw) as Map<String, dynamic>;
-    final recordList = (parsed['records'] as List<dynamic>? ?? const [])
-        .map((e) => Map<String, dynamic>.from(e as Map))
-        .toList();
-    final profileUpdate = Map<String, dynamic>.from((parsed['profileUpdate'] as Map?) ?? const {});
-    final calendars = (parsed['calendarSuggestions'] as List<dynamic>? ?? const [])
-        .map((e) => CalendarSuggestion.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList();
 
     return GeminiResult(
       answer: parsed['answer']?.toString().trim() ?? '분석을 완료했습니다.',
       followUpQuestion: parsed['followUpQuestion']?.toString().trim() ?? '',
-      records: recordList,
-      profileUpdate: profileUpdate,
-      calendarSuggestions: calendars,
+      records: (parsed['records'] as List<dynamic>? ?? const [])
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList(),
+      profileUpdate: Map<String, dynamic>.from((parsed['profileUpdate'] as Map?) ?? const {}),
+      calendarSuggestions: (parsed['calendarSuggestions'] as List<dynamic>? ?? const [])
+          .whereType<Map>()
+          .map((e) => CalendarSuggestion.fromJson(Map<String, dynamic>.from(e)))
+          .toList(),
     );
   }
 }
