@@ -1,5 +1,6 @@
 name: Flutter APK
 
+# Build trigger: 2026-07-22 verified rebuild
 on:
   push:
     branches: [flutter-app]
