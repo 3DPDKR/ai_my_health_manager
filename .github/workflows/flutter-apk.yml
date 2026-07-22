@@ -40,44 +40,47 @@ jobs:
         working-directory: flutter_app
         run: |
           cp pubspec.yaml /tmp/pubspec.yaml
-          mkdir -p /tmp/health_lib
-          cp lib/main.dart /tmp/health_lib/main.dart
+          cp lib/main.dart /tmp/main.dart
           flutter create --platforms=android --org com.aimyhealthmanager --project-name ai_my_health_manager .
           cp /tmp/pubspec.yaml pubspec.yaml
-          cp /tmp/health_lib/main.dart lib/main.dart
+          cp /tmp/main.dart lib/main.dart
 
       - name: Configure localization and Android permissions
         working-directory: flutter_app
         run: |
           python3 - <<'PY'
           from pathlib import Path
+
           main = Path('lib/main.dart')
-          s = main.read_text()
-          if "package:flutter_localizations/flutter_localizations.dart" not in s:
-              s = s.replace(
+          source = main.read_text(encoding='utf-8')
+          localization_import = "import 'package:flutter_localizations/flutter_localizations.dart';"
+          if localization_import not in source:
+              source = source.replace(
                   "import 'package:flutter/material.dart';",
-                  "import 'package:flutter/material.dart';\nimport 'package:flutter_localizations/flutter_localizations.dart';",
+                  "import 'package:flutter/material.dart';\n" + localization_import,
               )
-          target = "supportedLocales: const [Locale('ko'), Locale('en'), Locale('ja'), Locale('zh')],"
-          replacement = "localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate],\n    supportedLocales: const [Locale('ko'), Locale('en'), Locale('ja'), Locale('zh')],"
-          if 'localizationsDelegates:' not in s:
-              s = s.replace(target, replacement)
-          main.write_text(s)
+          locale_line = "supportedLocales: const [Locale('ko'), Locale('en'), Locale('ja'), Locale('zh')],"
+          delegates = "localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate],\n    " + locale_line
+          if 'localizationsDelegates:' not in source:
+              source = source.replace(locale_line, delegates)
+          main.write_text(source, encoding='utf-8')
 
           manifest = Path('android/app/src/main/AndroidManifest.xml')
-          m = manifest.read_text()
-          permissions = '''<uses-permission android:name="android.permission.INTERNET"/>
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
-    <uses-permission android:name="android.permission.CAMERA"/>
-    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
-    '''
-          if 'android.permission.INTERNET' not in m:
-              m = m.replace(
+          xml = manifest.read_text(encoding='utf-8')
+          permission_lines = [
+              '<uses-permission android:name="android.permission.INTERNET"/>',
+              '<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>',
+              '<uses-permission android:name="android.permission.CAMERA"/>',
+              '<uses-permission android:name="android.permission.RECORD_AUDIO"/>',
+              '<uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>',
+          ]
+          if 'android.permission.INTERNET' not in xml:
+              block = '\n    '.join(permission_lines)
+              xml = xml.replace(
                   '<manifest xmlns:android="http://schemas.android.com/apk/res/android">',
-                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    ' + permissions,
+                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n    ' + block,
               )
-          manifest.write_text(m)
+          manifest.write_text(xml, encoding='utf-8')
           PY
 
       - name: Install dependencies
