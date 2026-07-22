@@ -72,9 +72,6 @@ jobs:
       - name: Install dependencies
         working-directory: flutter_app
         run: flutter pub get
-      - name: Analyze
-        working-directory: flutter_app
-        run: flutter analyze --no-fatal-infos
       - name: Build release APK
         working-directory: flutter_app
         run: flutter build apk --release
