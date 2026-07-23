@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'product_health_home.dart';
+import 'product_health_home_v2.dart';
 
 class HealthAssistantApp extends StatefulWidget {
   const HealthAssistantApp({super.key});
@@ -73,7 +73,7 @@ class _HealthAssistantAppState extends State<HealthAssistantApp> {
           fillColor: Colors.white,
         ),
       ),
-      home: ProductHealthHome(
+      home: ProductHealthHomeV2(
         initialLanguage: _language,
         onLanguageChanged: _changeLanguage,
       ),
