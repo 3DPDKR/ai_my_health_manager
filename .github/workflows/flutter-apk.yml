@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/flutter-apk.yml'
+      - 'clean_app/**'
       - 'PROGRAM_GUIDE.md'
 
 permissions:
@@ -24,7 +25,7 @@ jobs:
       - name: Checkout application source
         uses: actions/checkout@v4
         with:
-          ref: clean-rebuild
+          ref: main
           fetch-depth: 1
 
       - name: Verify application source
