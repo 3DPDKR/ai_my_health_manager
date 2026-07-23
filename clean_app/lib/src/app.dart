@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'health_home.dart';
+import 'product_health_home.dart';
 
 class HealthAssistantApp extends StatefulWidget {
   const HealthAssistantApp({super.key});
@@ -24,6 +24,12 @@ class _HealthAssistantAppState extends State<HealthAssistantApp> {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
     setState(() => _language = prefs.getString('language') ?? 'system');
+  }
+
+  Future<void> _changeLanguage(String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('language', value);
+    if (mounted) setState(() => _language = value);
   }
 
   Locale? get _locale => switch (_language) {
@@ -62,10 +68,14 @@ class _HealthAssistantAppState extends State<HealthAssistantApp> {
             borderRadius: BorderRadius.all(Radius.circular(22)),
           ),
         ),
+        inputDecorationTheme: const InputDecorationTheme(
+          filled: true,
+          fillColor: Colors.white,
+        ),
       ),
-      home: HealthHome(
+      home: ProductHealthHome(
         initialLanguage: _language,
-        onLanguageChanged: (value) => setState(() => _language = value),
+        onLanguageChanged: _changeLanguage,
       ),
     );
   }
