@@ -1,4 +1,4 @@
-name: AI Health Assistant Verified APK 1.3.1
+name: AI Health Assistant Product APK 1.3.2
 
 on:
   workflow_dispatch:
@@ -32,8 +32,9 @@ jobs:
         run: |
           set -euxo pipefail
           test -f clean_app/pubspec.yaml
-          test -d clean_app/lib
+          test -f clean_app/analysis_options.yaml
           test -f clean_app/lib/main.dart
+          test -f clean_app/lib/src/product_health_home_v2.dart
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -70,6 +71,7 @@ jobs:
           cd /tmp/ai_health_build
           flutter create --platforms=android --org com.aimyhealthmanager --project-name ai_health_assistant .
           cp "$GITHUB_WORKSPACE/clean_app/pubspec.yaml" pubspec.yaml
+          cp "$GITHUB_WORKSPACE/clean_app/analysis_options.yaml" analysis_options.yaml
           rm -rf lib test
           cp -R "$GITHUB_WORKSPACE/clean_app/lib" lib
 
@@ -77,8 +79,6 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          APP=/tmp/ai_health_build
-
           python3 - <<'PY'
           from pathlib import Path
           import re
@@ -122,22 +122,6 @@ jobs:
               g = g.rstrip() + '\n\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")\n}\n'
           gradle.write_text(g, encoding='utf-8')
 
-          props = app / 'android/gradle.properties'
-          p = props.read_text(encoding='utf-8') if props.exists() else ''
-          required = {
-              'org.gradle.vfs.watch': 'false',
-              'org.gradle.daemon': 'false',
-              'android.useAndroidX': 'true',
-              'android.enableJetifier': 'true',
-          }
-          for key, value in required.items():
-              line = f'{key}={value}'
-              if re.search(rf'^{re.escape(key)}=', p, flags=re.MULTILINE):
-                  p = re.sub(rf'^{re.escape(key)}=.*$', line, p, flags=re.MULTILINE)
-              else:
-                  p = p.rstrip() + '\n' + line + '\n'
-          props.write_text(p.lstrip(), encoding='utf-8')
-
           manifest = app / 'android/app/src/main/AndroidManifest.xml'
           m = manifest.read_text(encoding='utf-8')
           marker = '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
@@ -149,6 +133,9 @@ jobs:
               <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
               <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
               <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+              <uses-permission android:name="android.permission.READ_CALENDAR"/>
+              <uses-permission android:name="android.permission.WRITE_CALENDAR"/>
           '''
           if 'android.permission.INTERNET' not in m:
               m = m.replace(marker, marker + permissions, 1)
@@ -156,24 +143,20 @@ jobs:
           manifest.write_text(m, encoding='utf-8')
           PY
 
-          echo '===== settings.gradle.kts ====='
-          cat "$APP/android/settings.gradle.kts"
-          echo '===== gradle-wrapper.properties ====='
-          cat "$APP/android/gradle/wrapper/gradle-wrapper.properties"
-          echo '===== app build.gradle.kts ====='
-          cat "$APP/android/app/build.gradle.kts"
-
-          grep -q 'version "8.10.1"' "$APP/android/settings.gradle.kts"
-          grep -q 'version "2.1.0"' "$APP/android/settings.gradle.kts"
-          grep -q 'gradle-8.11.1-bin.zip' "$APP/android/gradle/wrapper/gradle-wrapper.properties"
-          grep -q 'compileSdk = 36' "$APP/android/app/build.gradle.kts"
-          grep -q 'minSdk = 23' "$APP/android/app/build.gradle.kts"
-          grep -q 'targetSdk = 36' "$APP/android/app/build.gradle.kts"
-          grep -q 'isCoreLibraryDesugaringEnabled = true' "$APP/android/app/build.gradle.kts"
+          grep -q 'version "8.10.1"' /tmp/ai_health_build/android/settings.gradle.kts
+          grep -q 'version "2.1.0"' /tmp/ai_health_build/android/settings.gradle.kts
+          grep -q 'gradle-8.11.1-bin.zip' /tmp/ai_health_build/android/gradle/wrapper/gradle-wrapper.properties
+          grep -q 'compileSdk = 36' /tmp/ai_health_build/android/app/build.gradle.kts
+          grep -q 'minSdk = 23' /tmp/ai_health_build/android/app/build.gradle.kts
+          grep -q 'targetSdk = 36' /tmp/ai_health_build/android/app/build.gradle.kts
 
       - name: Install dependencies
         working-directory: /tmp/ai_health_build
         run: flutter pub get
+
+      - name: Format verification
+        working-directory: /tmp/ai_health_build
+        run: dart format --output=none --set-exit-if-changed lib
 
       - name: Analyze Dart source
         working-directory: /tmp/ai_health_build
@@ -181,23 +164,20 @@ jobs:
 
       - name: Verify Gradle runtime
         working-directory: /tmp/ai_health_build/android
-        shell: bash
-        run: |
-          set -euxo pipefail
-          ./gradlew --version
+        run: ./gradlew --version
 
       - name: Build release APK
         working-directory: /tmp/ai_health_build
         shell: bash
         run: |
           set +e
-          flutter build apk --release --no-tree-shake-icons --verbose > "$GITHUB_WORKSPACE/build-v1.3.1.log" 2>&1
+          flutter build apk --release --no-tree-shake-icons --verbose > "$GITHUB_WORKSPACE/build-v1.3.2.log" 2>&1
           STATUS=$?
           if [ $STATUS -ne 0 ]; then
             echo '===== IMPORTANT BUILD ERRORS ====='
-            grep -nEi 'FAILURE:|What went wrong|Execution failed|error:|exception|requires|compileSdk|minSdk|targetSdk|Caused by:' "$GITHUB_WORKSPACE/build-v1.3.1.log" | tail -n 180 || true
-            echo '===== FINAL 260 LOG LINES ====='
-            tail -n 260 "$GITHUB_WORKSPACE/build-v1.3.1.log" || true
+            grep -nEi 'FAILURE:|What went wrong|Execution failed|error:|exception|requires|compileSdk|minSdk|targetSdk|Caused by:' "$GITHUB_WORKSPACE/build-v1.3.2.log" | tail -n 200 || true
+            echo '===== FINAL 300 LOG LINES ====='
+            tail -n 300 "$GITHUB_WORKSPACE/build-v1.3.2.log" || true
             exit $STATUS
           fi
 
@@ -207,14 +187,14 @@ jobs:
           set -euxo pipefail
           APK=/tmp/ai_health_build/build/app/outputs/flutter-apk/app-release.apk
           test -s "$APK"
-          cp "$APK" "$GITHUB_WORKSPACE/AI_건강비서_v1.3.1.apk"
-          ls -lh "$GITHUB_WORKSPACE/AI_건강비서_v1.3.1.apk"
+          cp "$APK" "$GITHUB_WORKSPACE/AI_건강비서_v1.3.2.apk"
+          ls -lh "$GITHUB_WORKSPACE/AI_건강비서_v1.3.2.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ai-health-assistant-v1-3-1-apk
-          path: AI_건강비서_v1.3.1.apk
+          name: ai-health-assistant-v1-3-2-apk
+          path: AI_건강비서_v1.3.2.apk
           if-no-files-found: error
           retention-days: 30
 
@@ -222,7 +202,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: ai-health-assistant-v1-3-1-build-log
-          path: build-v1.3.1.log
+          name: ai-health-assistant-v1-3-2-build-log
+          path: build-v1.3.2.log
           if-no-files-found: ignore
           retention-days: 14
