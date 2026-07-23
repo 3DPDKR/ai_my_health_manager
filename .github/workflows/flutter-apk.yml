@@ -1,4 +1,4 @@
-name: AI Health Assistant Deterministic APK 1.3.0
+name: AI Health Assistant Verified APK 1.3.1
 
 on:
   workflow_dispatch:
@@ -34,7 +34,6 @@ jobs:
           test -f clean_app/pubspec.yaml
           test -d clean_app/lib
           test -f clean_app/lib/main.dart
-          echo 'Flutter application source verified.'
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -57,12 +56,12 @@ jobs:
         run: |
           set -euxo pipefail
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager 'platform-tools' 'platforms;android-36' 'build-tools;36.0.0'
+          sdkmanager 'platform-tools' 'platforms;android-36' 'build-tools;35.0.0'
           flutter --version
           dart --version
           java -version
 
-      - name: Create completely clean Flutter project
+      - name: Create isolated Flutter project
         shell: bash
         run: |
           set -euxo pipefail
@@ -74,28 +73,70 @@ jobs:
           rm -rf lib test
           cp -R "$GITHUB_WORKSPACE/clean_app/lib" lib
 
-      - name: Configure Android project deterministically
+      - name: Pin verified Android build toolchain
         shell: bash
         run: |
           set -euxo pipefail
           APP=/tmp/ai_health_build
-          GRADLE_FILE="$APP/android/app/build.gradle.kts"
 
           python3 - <<'PY'
           from pathlib import Path
           import re
 
           app = Path('/tmp/ai_health_build')
+
+          settings = app / 'android/settings.gradle.kts'
+          text = settings.read_text(encoding='utf-8')
+          text = re.sub(
+              r'id\("com\.android\.application"\) version "[^"]+" apply false',
+              'id("com.android.application") version "8.10.1" apply false',
+              text,
+              count=1,
+          )
+          text = re.sub(
+              r'id\("org\.jetbrains\.kotlin\.android"\) version "[^"]+" apply false',
+              'id("org.jetbrains.kotlin.android") version "2.1.0" apply false',
+              text,
+              count=1,
+          )
+          settings.write_text(text, encoding='utf-8')
+
+          wrapper = app / 'android/gradle/wrapper/gradle-wrapper.properties'
+          w = wrapper.read_text(encoding='utf-8')
+          w = re.sub(
+              r'distributionUrl=.*',
+              r'distributionUrl=https\://services.gradle.org/distributions/gradle-8.11.1-bin.zip',
+              w,
+              count=1,
+          )
+          wrapper.write_text(w, encoding='utf-8')
+
           gradle = app / 'android/app/build.gradle.kts'
-          text = gradle.read_text(encoding='utf-8')
-          text = re.sub(r'compileSdk\s*=\s*(?:flutter\.compileSdkVersion|\d+)', 'compileSdk = 36', text, count=1)
-          text = re.sub(r'minSdk\s*=\s*(?:flutter\.minSdkVersion|\d+)', 'minSdk = 23', text, count=1)
-          text = re.sub(r'targetSdk\s*=\s*(?:flutter\.targetSdkVersion|\d+)', 'targetSdk = 36', text, count=1)
-          if 'isCoreLibraryDesugaringEnabled = true' not in text:
-              text = text.replace('compileOptions {', 'compileOptions {\n        isCoreLibraryDesugaringEnabled = true', 1)
-          if 'coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:' not in text:
-              text = text.rstrip() + '\n\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")\n}\n'
-          gradle.write_text(text, encoding='utf-8')
+          g = gradle.read_text(encoding='utf-8')
+          g = re.sub(r'compileSdk\s*=\s*(?:flutter\.compileSdkVersion|\d+)', 'compileSdk = 36', g, count=1)
+          g = re.sub(r'minSdk\s*=\s*(?:flutter\.minSdkVersion|\d+)', 'minSdk = 23', g, count=1)
+          g = re.sub(r'targetSdk\s*=\s*(?:flutter\.targetSdkVersion|\d+)', 'targetSdk = 36', g, count=1)
+          if 'isCoreLibraryDesugaringEnabled = true' not in g:
+              g = g.replace('compileOptions {', 'compileOptions {\n        isCoreLibraryDesugaringEnabled = true', 1)
+          if 'coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:' not in g:
+              g = g.rstrip() + '\n\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")\n}\n'
+          gradle.write_text(g, encoding='utf-8')
+
+          props = app / 'android/gradle.properties'
+          p = props.read_text(encoding='utf-8') if props.exists() else ''
+          required = {
+              'org.gradle.vfs.watch': 'false',
+              'org.gradle.daemon': 'false',
+              'android.useAndroidX': 'true',
+              'android.enableJetifier': 'true',
+          }
+          for key, value in required.items():
+              line = f'{key}={value}'
+              if re.search(rf'^{re.escape(key)}=', p, flags=re.MULTILINE):
+                  p = re.sub(rf'^{re.escape(key)}=.*$', line, p, flags=re.MULTILINE)
+              else:
+                  p = p.rstrip() + '\n' + line + '\n'
+          props.write_text(p.lstrip(), encoding='utf-8')
 
           manifest = app / 'android/app/src/main/AndroidManifest.xml'
           m = manifest.read_text(encoding='utf-8')
@@ -113,27 +154,22 @@ jobs:
               m = m.replace(marker, marker + permissions, 1)
           m = m.replace('android:label="ai_health_assistant"', 'android:label="AI 건강비서"')
           manifest.write_text(m, encoding='utf-8')
-
-          props = app / 'android/gradle.properties'
-          p = props.read_text(encoding='utf-8') if props.exists() else ''
-          for line in [
-              'org.gradle.vfs.watch=false',
-              'org.gradle.daemon=false',
-              'android.useAndroidX=true',
-              'android.enableJetifier=true',
-          ]:
-              key = line.split('=', 1)[0]
-              p = re.sub(rf'^{re.escape(key)}=.*$', line, p, flags=re.MULTILINE) if re.search(rf'^{re.escape(key)}=', p, flags=re.MULTILINE) else p.rstrip() + '\n' + line + '\n'
-          props.write_text(p.lstrip(), encoding='utf-8')
           PY
 
-          cat "$GRADLE_FILE"
-          grep -q 'compileSdk = 36' "$GRADLE_FILE"
-          grep -q 'minSdk = 23' "$GRADLE_FILE"
-          grep -q 'targetSdk = 36' "$GRADLE_FILE"
-          grep -q 'isCoreLibraryDesugaringEnabled = true' "$GRADLE_FILE"
-          grep -q 'coreLibraryDesugaring' "$GRADLE_FILE"
+          echo '===== settings.gradle.kts ====='
+          cat "$APP/android/settings.gradle.kts"
+          echo '===== gradle-wrapper.properties ====='
           cat "$APP/android/gradle/wrapper/gradle-wrapper.properties"
+          echo '===== app build.gradle.kts ====='
+          cat "$APP/android/app/build.gradle.kts"
+
+          grep -q 'version "8.10.1"' "$APP/android/settings.gradle.kts"
+          grep -q 'version "2.1.0"' "$APP/android/settings.gradle.kts"
+          grep -q 'gradle-8.11.1-bin.zip' "$APP/android/gradle/wrapper/gradle-wrapper.properties"
+          grep -q 'compileSdk = 36' "$APP/android/app/build.gradle.kts"
+          grep -q 'minSdk = 23' "$APP/android/app/build.gradle.kts"
+          grep -q 'targetSdk = 36' "$APP/android/app/build.gradle.kts"
+          grep -q 'isCoreLibraryDesugaringEnabled = true' "$APP/android/app/build.gradle.kts"
 
       - name: Install dependencies
         working-directory: /tmp/ai_health_build
@@ -143,18 +179,25 @@ jobs:
         working-directory: /tmp/ai_health_build
         run: flutter analyze lib --no-fatal-infos --no-fatal-warnings
 
+      - name: Verify Gradle runtime
+        working-directory: /tmp/ai_health_build/android
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ./gradlew --version
+
       - name: Build release APK
         working-directory: /tmp/ai_health_build
         shell: bash
         run: |
           set +e
-          flutter build apk --release --no-tree-shake-icons --verbose > "$GITHUB_WORKSPACE/build-v1.3.0.log" 2>&1
+          flutter build apk --release --no-tree-shake-icons --verbose > "$GITHUB_WORKSPACE/build-v1.3.1.log" 2>&1
           STATUS=$?
           if [ $STATUS -ne 0 ]; then
             echo '===== IMPORTANT BUILD ERRORS ====='
-            grep -nEi 'FAILURE:|What went wrong|Execution failed|error:|exception|requires|compileSdk|minSdk|targetSdk|Caused by:' "$GITHUB_WORKSPACE/build-v1.3.0.log" | tail -n 160 || true
-            echo '===== FINAL 240 LOG LINES ====='
-            tail -n 240 "$GITHUB_WORKSPACE/build-v1.3.0.log" || true
+            grep -nEi 'FAILURE:|What went wrong|Execution failed|error:|exception|requires|compileSdk|minSdk|targetSdk|Caused by:' "$GITHUB_WORKSPACE/build-v1.3.1.log" | tail -n 180 || true
+            echo '===== FINAL 260 LOG LINES ====='
+            tail -n 260 "$GITHUB_WORKSPACE/build-v1.3.1.log" || true
             exit $STATUS
           fi
 
@@ -164,14 +207,14 @@ jobs:
           set -euxo pipefail
           APK=/tmp/ai_health_build/build/app/outputs/flutter-apk/app-release.apk
           test -s "$APK"
-          cp "$APK" "$GITHUB_WORKSPACE/AI_건강비서_v1.3.0.apk"
-          ls -lh "$GITHUB_WORKSPACE/AI_건강비서_v1.3.0.apk"
+          cp "$APK" "$GITHUB_WORKSPACE/AI_건강비서_v1.3.1.apk"
+          ls -lh "$GITHUB_WORKSPACE/AI_건강비서_v1.3.1.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ai-health-assistant-v1-3-0-apk
-          path: AI_건강비서_v1.3.0.apk
+          name: ai-health-assistant-v1-3-1-apk
+          path: AI_건강비서_v1.3.1.apk
           if-no-files-found: error
           retention-days: 30
 
@@ -179,7 +222,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: ai-health-assistant-v1-3-0-build-log
-          path: build-v1.3.0.log
+          name: ai-health-assistant-v1-3-1-build-log
+          path: build-v1.3.1.log
           if-no-files-found: ignore
           retention-days: 14
