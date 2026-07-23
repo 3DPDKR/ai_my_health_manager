@@ -12,19 +12,14 @@ class AppPreferences {
 
   Future<bool> get onboardingCompleted async =>
       (await SharedPreferences.getInstance()).getBool(_onboardingKey) ?? false;
-
   Future<void> setOnboardingCompleted(bool value) async =>
       (await SharedPreferences.getInstance()).setBool(_onboardingKey, value);
-
   Future<bool> get notificationsEnabled async =>
       (await SharedPreferences.getInstance()).getBool(_notificationKey) ?? true;
-
   Future<void> setNotificationsEnabled(bool value) async =>
       (await SharedPreferences.getInstance()).setBool(_notificationKey, value);
-
   Future<bool> get backgroundEnabled async =>
       (await SharedPreferences.getInstance()).getBool(_backgroundKey) ?? true;
-
   Future<void> setBackgroundEnabled(bool value) async =>
       (await SharedPreferences.getInstance()).setBool(_backgroundKey, value);
 }
@@ -79,12 +74,12 @@ class SpeechService {
     final available = await _speech.initialize();
     if (!available) return false;
     await _speech.listen(
+      onResult: (result) => onText(result.recognizedWords),
       localeId: 'ko_KR',
       listenOptions: SpeechListenOptions(
         partialResults: true,
         cancelOnError: true,
       ),
-      onResult: (result) => onText(result.recognizedWords),
     );
     return true;
   }
@@ -106,7 +101,7 @@ class NotificationService {
     tz_data.initializeTimeZones();
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     const settings = InitializationSettings(android: android);
-    await _plugin.initialize(settings: settings);
+    await _plugin.initialize(settings);
     final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
     await androidPlugin?.requestNotificationsPermission();
@@ -126,10 +121,10 @@ class NotificationService {
   Future<void> showTest() async {
     await initialize();
     await _plugin.show(
-      id: 9000,
-      title: 'AI 건강비서',
-      body: '알림이 정상적으로 작동합니다.',
-      notificationDetails: _details,
+      9000,
+      'AI 건강비서',
+      '알림이 정상적으로 작동합니다.',
+      _details,
     );
   }
 
@@ -150,18 +145,20 @@ class NotificationService {
       hour,
       minute,
     );
-    if (!scheduled.isAfter(now)) scheduled = scheduled.add(const Duration(days: 1));
+    if (!scheduled.isAfter(now)) {
+      scheduled = scheduled.add(const Duration(days: 1));
+    }
     await _plugin.zonedSchedule(
-      id: id,
-      title: title,
-      body: body,
-      scheduledDate: scheduled,
-      notificationDetails: _details,
+      id,
+      title,
+      body,
+      scheduled,
+      _details,
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       matchDateTimeComponents: DateTimeComponents.time,
     );
   }
 
-  Future<void> cancel(int id) async => _plugin.cancel(id: id);
+  Future<void> cancel(int id) async => _plugin.cancel(id);
   Future<void> cancelAll() async => _plugin.cancelAll();
 }
