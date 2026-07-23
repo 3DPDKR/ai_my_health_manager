@@ -61,17 +61,18 @@ class StorageService {
     return result;
   }
 
-  Map<String, dynamic> _migrateProfile(Map<String, dynamic> raw) {
-    return {
-      'confirmedConditions': _plainList(raw['confirmedConditions'], maxItems: 12),
-      'inferredConditions': _plainList(raw['inferredConditions'], maxItems: 8),
-      'medications': _plainList(raw['medications'], maxItems: 40),
-      'medicationsByDepartment': _plainGrouped(raw['medicationsByDepartment']),
-      'inferredConditionsByDepartment': _plainGrouped(raw['inferredConditionsByDepartment'], maxItems: 8),
-      'allergies': _plainList(raw['allergies'], maxItems: 10),
-      'notes': _plainList(raw['notes'], maxItems: 12),
-    };
-  }
+  Map<String, dynamic> _migrateProfile(Map<String, dynamic> raw) => {
+        'confirmedConditions': _plainList(raw['confirmedConditions'], maxItems: 12),
+        'inferredConditions': _plainList(raw['inferredConditions'], maxItems: 8),
+        'medications': _plainList(raw['medications'], maxItems: 40),
+        'medicationsByDepartment': _plainGrouped(raw['medicationsByDepartment']),
+        'inferredConditionsByDepartment': _plainGrouped(
+          raw['inferredConditionsByDepartment'],
+          maxItems: 8,
+        ),
+        'allergies': _plainList(raw['allergies'], maxItems: 10),
+        'notes': _plainList(raw['notes'], maxItems: 12),
+      };
 
   Future<StoredHealthState> load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -81,7 +82,11 @@ class StorageService {
 
     try {
       final rawRecords = jsonDecode(prefs.getString(_recordsKey) ?? '[]') as List<dynamic>;
-      records.addAll(rawRecords.map((e) => HealthRecord.fromJson(Map<String, dynamic>.from(e as Map))));
+      records.addAll(
+        rawRecords.map(
+          (e) => HealthRecord.fromJson(Map<String, dynamic>.from(e as Map)),
+        ),
+      );
     } catch (_) {}
 
     try {
@@ -93,7 +98,11 @@ class StorageService {
 
     try {
       final rawLogs = jsonDecode(prefs.getString(_logsKey) ?? '[]') as List<dynamic>;
-      logs.addAll(rawLogs.map((e) => ErrorLogEntry.fromJson(Map<String, dynamic>.from(e as Map))));
+      logs.addAll(
+        rawLogs.map(
+          (e) => ErrorLogEntry.fromJson(Map<String, dynamic>.from(e as Map)),
+        ),
+      );
     } catch (_) {}
 
     return StoredHealthState(records: records, profile: profile, logs: logs);
@@ -107,6 +116,20 @@ class StorageService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_recordsKey, jsonEncode(records.map((e) => e.toJson()).toList()));
     await prefs.setString(_profileKey, jsonEncode(profile.toJson()));
-    await prefs.setString(_logsKey, jsonEncode(logs.take(100).map((e) => e.toJson()).toList()));
+    await prefs.setString(
+      _logsKey,
+      jsonEncode(logs.take(100).map((e) => e.toJson()).toList()),
+    );
+  }
+
+  /// Deletes only user health content managed by this service.
+  /// API keys and general app preferences are intentionally preserved.
+  Future<void> clearHealthData() async {
+    final prefs = await SharedPreferences.getInstance();
+    await Future.wait([
+      prefs.remove(_recordsKey),
+      prefs.remove(_profileKey),
+      prefs.remove(_logsKey),
+    ]);
   }
 }
